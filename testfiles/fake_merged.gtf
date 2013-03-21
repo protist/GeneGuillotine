@@ -13,6 +13,8 @@ TGGT1_chrII	Cufflinks	exon	53	63	.	+	.	gene_id "XLOC_000002"; transcript_id "tra
 TGGT1_chrII	Cufflinks	exon	54	82	.	+	.	gene_id "XLOC_000002"; transcript_id "transcript_054"; exon_number "5"; oId "CUFF.9.1"; tss_id "TSS3";
 TGGT1_chrII	Cufflinks	exon	55	90	.	+	.	gene_id "XLOC_000002"; transcript_id "transcript_055"; exon_number "5"; oId "CUFF.9.1"; tss_id "TSS3";
 TGGT1_chrII	Cufflinks	exon	56	115	.	+	.	gene_id "XLOC_000002"; transcript_id "transcript_056"; exon_number "5"; oId "CUFF.9.1"; tss_id "TSS3";
+TGGT1_chrII	Cufflinks	exon	73	78	.	+	.	gene_id "XLOC_000002"; transcript_id "transcript_073"; exon_number "5"; oId "CUFF.9.1"; tss_id "TSS3";
+TGGT1_chrII	Cufflinks	exon	74	79	.	+	.	gene_id "XLOC_000002"; transcript_id "transcript_074"; exon_number "5"; oId "CUFF.9.1"; tss_id "TSS3";
 TGGT1_chrII	Cufflinks	exon	102	110	.	+	.	gene_id "XLOC_000002"; transcript_id "transcript_102"; exon_number "5"; oId "CUFF.9.1"; tss_id "TSS3";
 TGGT1_chrII	Cufflinks	exon	113	119	.	+	.	gene_id "XLOC_000002"; transcript_id "transcript_113"; exon_number "5"; oId "CUFF.9.1"; tss_id "TSS3";
 TGGT1_chrII	Cufflinks	exon	114	120	.	+	.	gene_id "XLOC_000002"; transcript_id "transcript_114"; exon_number "5"; oId "CUFF.9.1"; tss_id "TSS3";
