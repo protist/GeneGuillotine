@@ -122,7 +122,7 @@ class UserGTF
   end
 
   # For a particular chromosome and transcript_id, return exon coords in array of arrays.
-  def read_transcript_coords(chromosome, transcript_id)
+  def transcript_coords(chromosome, transcript_id)
     @transcripts_by_chromosome[chromosome][transcript_id][:coords]
   end
 
@@ -150,7 +150,7 @@ class UserGTF
   def overlap_stats
     output_hash = @overlap_stats.select { |key, _| key==:NA}
     output_hash.merge(Hash[@overlap_stats.select {|key, _| key!=:NA}.
-                          sort_by {|key, _| key }])
+                               sort_by {|key, _| key }])
   end
 
   # Write gene name to a transcript.
@@ -160,7 +160,8 @@ class UserGTF
 end
 
 # Read transcripts from cuffmerge out
-#   chr <Cufflinks> <exon> start end <.> +/-/. <.> gene_id "XLOC_000384"; transcript_id "TCONS_00001640"; exon_number "3"; oId "CUFF.506.1"; tss_id "TSS678";
+#   chr <Cufflinks> <exon> start end <.> +/-/. <.> gene_id "XLOC_000384";
+#     transcript_id "TCONS_00001640"; exon_number "3"; oId "CUFF.506.1"; tss_id "TSS678";
 #     occasionally, ends with oId "CUFF.1863.2"; contained_in "TCONS_00005635"; tss_id "TSS2590";
 #     if strand == "-", exons are still in increasing order.
 #   everything in <> is consistent across the whole file, so don't bother storing it.
@@ -172,7 +173,7 @@ end
 puts "#{Time.new}: parsing primary gtf file."
 transcripts = UserGTF.new
 File.open(options[:mygtf_path]).each do |line| # There are no header lines for cuffmerge out.
-                                     # These are the parts of each line that we need.
+                                               # These are the parts of each line that we need.
   splitline = line.chomp.split("\t")
   if splitline !=[]
     transcripts.write_transcript(splitline[0], \
@@ -204,8 +205,8 @@ class ReferenceGFF
     @genes_by_chromosome[chromosome.to_sym] ||= {}
     # Create new gene_id hash if it doesn't exist.
     @genes_by_chromosome[chromosome.to_sym][gene_id.to_sym] ||= [start, stop]
-    # Compare coordinates to existing ones (redundancy if you've just created the
-    #   gene, but I'm not sure if it's still quicker to use ||= )
+    # Compare coordinates to existing ones (redundancy if you've just created
+    #   the gene, but I'm not sure if it's still quicker to use ||= )
     if start < @genes_by_chromosome[chromosome.to_sym][gene_id.to_sym].first
       @genes_by_chromosome[chromosome.to_sym][gene_id.to_sym][0] = start
     end
@@ -280,20 +281,24 @@ refgff.sort!
 # TODO: What if genes from this file overlap? If that happens, then cut genes between terminal CDSs
 
 ################################################################################
-### Various actions to run on mygff when splitting or renaming.
+### Define string modifiers when transcripts aren't on one gene.
 # Define the gene ID to use if the transcript does not overlap any genes.
 class String
-  # Transcript is intergenic, but closest to this gene.
-  def near
-    'near_' + self
+  # Transcript is intergenic, but closest to this upstream gene.
+  def after
+    'after_' + self
+  end
+  # Transcript is intergenic, but closest to this downstream gene.
+  def before
+    'before_' + self
   end
   # Transcript is after all annotated reference genes on this contig.
   def end
-    'after_' + self
+    'after_last_' + self
   end
   # Transcript is before all annotated reference genes on this contig.
   def begin
-    'before_' + self
+    'before_first_' + self
   end
 end
 
@@ -318,8 +323,8 @@ transcripts.chromosome_names.each do |chromosome|
     # For each transcript, find out into which (ref) genes the tss and tes fall.
     position_of_first_overlapping_gene = nil
     position_of_last_overlapping_gene = nil
-    tss = transcripts.read_transcript_coords(chromosome, transcript_id).first.first
-    tes = transcripts.read_transcript_coords(chromosome, transcript_id).last.last
+    tss = transcripts.transcript_coords(chromosome, transcript_id).first.first
+    tes = transcripts.transcript_coords(chromosome, transcript_id).last.last
 
     # Find first overlapping gene; technically, the first gene downstream of the
     #   tss, even if the transcript does not overlap any genes.
@@ -398,15 +403,22 @@ transcripts.chromosome_names.each do |chromosome|
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, position_of_first_overlapping_gene))
     elsif position_of_last_overlapping_gene < position_of_first_overlapping_gene # the transcript is wholly intergenic
+      upstream_coord = refgff.gene_coords(chromosome, position_of_last_overlapping_gene).last
+      downstream_coord = refgff.gene_coords(chromosome, position_of_first_overlapping_gene).first
+      transcript_start = transcripts.transcript_coords(chromosome, transcript_id).first.first
+      transcript_end = transcripts.transcript_coords(chromosome, transcript_id).last.last
+      if (transcript_start - upstream_coord) <= (downstream_coord - transcript_end)
+        nearest = {position: "after", gene_id:
+            refgff.gene_id(chromosome, position_of_last_overlapping_gene)}
+      else
+        nearest = {position: "before", gene_id:
+            refgff.gene_id(chromosome, position_of_first_overlapping_gene)}
+      end
       if options[:verbose]
-        puts "need to find nearest neighbour, but it's between #{refgff.
-            gene_id(chromosome, position_of_last_overlapping_gene)} and #{refgff.
-            gene_id(chromosome, position_of_first_overlapping_gene)}"
+        puts "intergenic, #{nearest[:position]} #{nearest[:gene_id]}"
       end
       transcripts.add_event(0)
-      # TODO: work out nearest gene
-      transcripts.write_gene_id(chromosome, transcript_id, refgff.
-          gene_id(chromosome, position_of_first_overlapping_gene))
+      transcripts.write_gene_id(chromosome, transcript_id, nearest[:gene_id].send(nearest[:position]))
     else # covers multiple genes
       if options[:verbose]
         puts "covers #{position_of_last_overlapping_gene - \
