@@ -69,10 +69,47 @@ if ruby_release < min_release
 end
 
 ################################################################################
+### Define string modifiers when transcripts aren't on one gene. These can
+###   mostly be modified here, except were indicated.
+class String
+# Define the gene ID to use if the transcript does not overlap any genes.
+  # Transcript is intergenic, but closest to this upstream gene.
+  def after
+    'after_' + self
+  end
+  # Transcript is intergenic, but closest to this downstream gene.
+  def before
+    'before_' + self
+  end
+  # Transcript is after all annotated reference genes on this contig.
+  def end
+    'after_last_' + self
+  end
+  # Transcript is before all annotated reference genes on this contig.
+  def begin
+    'before_first_' + self
+  end
+
+# Define the gene ID to use if the transcript overlaps multiple genes.
+  def multiple
+    first_suffix = ':a'
+    last_suffix = ':z'
+    suffix_regex = /:[a-z]$/
+    if !(self =~ suffix_regex)
+      self + first_suffix
+    elsif self.end_with? last_suffix
+      abort("Too many multiples for #{self.chomp(last_suffix)}")
+    else
+      self.next
+    end
+  end
+end
+
+################################################################################
 ### Read primary gtf file from user's experimental data
-# Define userGTF class
-class UserGTF
-  # A UserGTF object stores information from a cuffmerge output, specifically
+# Define UserTranscripts class
+class UserTranscripts
+  # A UserTranscripts object stores information from a cuffmerge output, specifically
   # the chromosome, transcript ID, start and stop coordinates of each exon, and
   # "other" information (e.g. strand, oId, tss_id)
   # This object will also store statistics on how many transcripts overlap with
@@ -82,6 +119,7 @@ class UserGTF
     @overlap_stats = overlap_stats # e.g. {NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1}
                                    # where NA is for no genes, and 0 encompasses
                                    # both intergenic and terminal.
+    @replacement_transcripts = {}
   end
 
   # Create a new chromosome and gene id if necessary, and replace start and stop
@@ -106,7 +144,7 @@ class UserGTF
     @transcripts_by_chromosome[chromosome.to_sym][transcript_id.to_sym][:other] ||= [strand, notes]
   end
 
-  attr_reader(:transcripts_by_chromosome)
+  attr_reader(:transcripts_by_chromosome, :replacement_transcripts) # for debugging
 
   # For each chromosome, sort genes by start coordinates.
   def sort!
@@ -153,9 +191,67 @@ class UserGTF
                                sort_by {|key, _| key }])
   end
 
-  # Write gene name to a transcript.
+  # Write gene id to a transcript.
   def write_gene_id(chromosome, transcript_id, gene_id)
     @transcripts_by_chromosome[chromosome][transcript_id][:gene_id] = gene_id
+  end
+
+  # Add to list of transcripts to split.
+  def define_split(chromosome, transcript_id, split_coord)
+    @replacement_transcripts[chromosome] ||= {}
+    @replacement_transcripts[chromosome][transcript_id] ||= []
+    @replacement_transcripts[chromosome][transcript_id].push(split_coord)
+  end
+
+  # Actually make the splits. Call this after the loop is completed, to prevent
+  #   problems with changing order of hash, and having to unnecessarily read new
+  #   positions from the end.
+  def split!
+    @replacement_transcripts.each do |chromosome, transcripts_to_split_by_chromosome|
+      transcripts_to_split_by_chromosome.each do |parent_transcript_id, split_coords|
+        working_transcript = @transcripts_by_chromosome[chromosome].delete(parent_transcript_id)
+        first_iteration = true
+        split_coords.each do |split_coord|
+          if first_iteration
+            new_transcript_id = parent_transcript_id.to_s.multiple.to_sym
+            first_iteration = false
+          else
+            new_transcript_id = transcripts_by_chromosome[chromosome].keys.last.to_s.multiple.to_sym
+          end
+          @transcripts_by_chromosome[chromosome][new_transcript_id] = \
+              {coords: [], other: working_transcript[:other]}
+          found_split = false
+          while !found_split
+            if split_coord.between?(working_transcript[:coords].first.first, \
+                working_transcript[:coords].first.last) # in exon
+              found_split = true
+              if !(split_coord == working_transcript[:coords].first.first)
+                @transcripts_by_chromosome[chromosome][new_transcript_id][:coords].
+                    push([working_transcript[:coords].first.first, (split_coord - 1)])
+              end
+              # How much of the working transcript do we retain?
+              if split_coord == working_transcript[:coords].first.last
+                working_transcript[:coords].shift
+              else
+                working_transcript[:coords][0][0] = split_coord + 1
+              end
+            else
+              # Check next intron. (Error if this follows the last exon, but should never occur.)
+              if split_coord.between?((working_transcript[:coords].first.last + 1), \
+                  (working_transcript[:coords][1].first - 1))
+                found_split = true
+              end
+              # Not in this exon, so move these coords to transcript.
+              @transcripts_by_chromosome[chromosome][new_transcript_id][:coords].
+                  push(working_transcript[:coords].shift)
+            end
+          end
+        end
+        # Write final transcript.
+        new_transcript_id = transcripts_by_chromosome[chromosome].keys.last.to_s.multiple.to_sym
+        @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
+      end
+    end
   end
 end
 
@@ -171,7 +267,7 @@ end
 #   +/-/., oId and tss_id are unnecessary for DEXSeq (but let's hang on to them
 #     for now, unless this has a large effect on efficiency).
 puts "#{Time.new}: parsing primary gtf file."
-transcripts = UserGTF.new
+transcripts = UserTranscripts.new
 File.open(options[:mygtf_path]).each do |line| # There are no header lines for cuffmerge out.
                                                # These are the parts of each line that we need.
   splitline = line.chomp.split("\t")
@@ -332,28 +428,6 @@ end
 pileup = Pileup.new(options[:pileup_path])
 
 ################################################################################
-### Define string modifiers when transcripts aren't on one gene.
-# Define the gene ID to use if the transcript does not overlap any genes.
-class String
-  # Transcript is intergenic, but closest to this upstream gene.
-  def after
-    'after_' + self
-  end
-  # Transcript is intergenic, but closest to this downstream gene.
-  def before
-    'before_' + self
-  end
-  # Transcript is after all annotated reference genes on this contig.
-  def end
-    'after_last_' + self
-  end
-  # Transcript is before all annotated reference genes on this contig.
-  def begin
-    'before_first_' + self
-  end
-end
-
-################################################################################
 ### Find transcripts that overlap two genes; assign gene IDs to all.
 # Split transcripts when they overlap two genes.
 # There doesn't seem to be a way to change a key while retaining order.
@@ -470,7 +544,7 @@ transcripts.chromosome_names.each do |chromosome|
       end
       transcripts.add_event(0)
       transcripts.write_gene_id(chromosome, transcript_id, nearest[:gene_id].send(nearest[:position]))
-    else # covers multiple genes
+    else # Covers multiple genes. Find and record split positions.
       if options[:verbose]
         puts "covers #{position_of_last_overlapping_gene - \
           position_of_first_overlapping_gene + 1} genes from #{refgff.
@@ -478,18 +552,19 @@ transcripts.chromosome_names.each do |chromosome|
           "#{refgff.gene_id(chromosome, position_of_last_overlapping_gene)}"
       end
       transcripts.add_event(position_of_last_overlapping_gene - position_of_first_overlapping_gene + 1)
-      # TODO: split transcript
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, position_of_first_overlapping_gene))
       (position_of_first_overlapping_gene..(position_of_last_overlapping_gene - 1)).
           each do |position_of_upstream_gene|
-        p pileup.minimum(chromosome, (refgff.gene_coords(chromosome, position_of_upstream_gene).
+        split_coord = pileup.minimum(chromosome, (refgff.gene_coords(chromosome, position_of_upstream_gene).
             last + 1), (refgff.gene_coords(chromosome, position_of_upstream_gene + 1).first - 1))
-        # TODO: write new positions into a sub-object of transcripts. Then delete/add later.
+        transcripts.define_split(chromosome, transcript_id, split_coord)
       end
     end
   end
 end
+
+transcripts.split!
 
 # print transcripts.overlap_stats
 # p transcripts.transcripts_by_chromosome
