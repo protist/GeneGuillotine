@@ -281,6 +281,57 @@ refgff.sort!
 # TODO: What if genes from this file overlap? If that happens, then cut genes between terminal CDSs
 
 ################################################################################
+### Read pileup file (from samtools mpileup)
+# Define pileup class
+class Pileup
+  # A Pileup object stores relevant information from a pileup file, specifically
+  #   chromosome, coordinates, and number of reads per coordinate.
+
+  # A pileup file (from samtools mpileup)is tab-delimited, containing
+  #   chromosome name, coordinate, reference base, the number of reads covering
+  #   the site, read bases, and base qualities
+  #   e.g. TGGT1_chrII  1  N  8 ^$C^$C^$C^$C^$C^$C^$C^$C  @@CC+@C@
+  #   This is ordered by chromosome, then by coordinates. N.B. There are no
+  #   entries for zero depth, but transcripts shouldn't contain these anyway.
+  # The @pileup_by_chromosome has format as follows
+  #   {:chromosome => {coordinate => depth, coordinate => depth, ...}}
+  def initialize(pileup_path)
+    @pileup_by_chromosome = {}
+    File.open(pileup_path).each do |line|
+      splitline = line.split "\t"
+      input_chromosome = splitline[0].to_sym
+      input_coordinate = splitline[1].to_i
+      input_depth = splitline[3].to_i
+      # Create new chromosome hash if it doesn't exist.
+      @pileup_by_chromosome[input_chromosome] ||= {}
+      # Add the coordinate and depth from this line of the pileup file.
+      @pileup_by_chromosome[input_chromosome][input_coordinate] = input_depth
+    end
+  end
+
+  # Find most-central minimum, given chromosome and coordinate range
+  def minimum(chromosome, start, stop)
+    max_coord_delta = ((stop - start)/2).to_i
+    min_coord = nil
+    min_depth = Float::INFINITY
+    # Test from both extremities, moving towards the centre.
+    (0..max_coord_delta).each do |coord_delta|
+      [start + coord_delta, stop - coord_delta].each do |testing_coord|
+        testing_depth = @pileup_by_chromosome[chromosome][testing_coord]
+        if testing_depth <= min_depth
+          min_coord = testing_coord
+          min_depth = testing_depth
+        end
+      end
+    end
+    min_coord
+  end
+end
+
+# Create pileup object
+pileup = Pileup.new(options[:pileup_path])
+
+################################################################################
 ### Define string modifiers when transcripts aren't on one gene.
 # Define the gene ID to use if the transcript does not overlap any genes.
 class String
@@ -373,7 +424,7 @@ transcripts.chromosome_names.each do |chromosome|
         end
         transcripts.add_event(:NA)
         transcripts.write_gene_id(chromosome, transcript_id,
-                                  "No_genes_on_ref_contig")
+                                  'No_genes_on_ref_contig')
       else # at the end of the chromosome
            # Could introduce this test earlier, and quickly mark all remaining
            #   transcripts identically, but there shouldn't be many, and it's
@@ -408,10 +459,10 @@ transcripts.chromosome_names.each do |chromosome|
       transcript_start = transcripts.transcript_coords(chromosome, transcript_id).first.first
       transcript_end = transcripts.transcript_coords(chromosome, transcript_id).last.last
       if (transcript_start - upstream_coord) <= (downstream_coord - transcript_end)
-        nearest = {position: "after", gene_id:
+        nearest = {position: 'after', gene_id:
             refgff.gene_id(chromosome, position_of_last_overlapping_gene)}
       else
-        nearest = {position: "before", gene_id:
+        nearest = {position: 'before', gene_id:
             refgff.gene_id(chromosome, position_of_first_overlapping_gene)}
       end
       if options[:verbose]
@@ -430,6 +481,12 @@ transcripts.chromosome_names.each do |chromosome|
       # TODO: split transcript
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, position_of_first_overlapping_gene))
+      (position_of_first_overlapping_gene..(position_of_last_overlapping_gene - 1)).
+          each do |position_of_upstream_gene|
+        p pileup.minimum(chromosome, (refgff.gene_coords(chromosome, position_of_upstream_gene).
+            last + 1), (refgff.gene_coords(chromosome, position_of_upstream_gene + 1).first - 1))
+        # TODO: write new positions into a sub-object of transcripts. Then delete/add later.
+      end
     end
   end
 end
@@ -444,14 +501,11 @@ end
 
 ################################################################################
 ### Make gene name unique if transcripts do not overlap
-
+# DEXSeq trusts geneIDs. Hence, it combines two genes if they have the same
+#   geneID, regardless of where they are located.
 
 # TODO: if multiple, overlapping transcripts on a single gene -> they should share a gene ID. We are trusting the refgff gene limits.
 #   OTOH, if there are multiple non-overlapping transcripts on a single gene, we should break them up into -a, -b, etc.
-#   DEXSeq goes by geneID. It will combine two genes if they have the same geneID, regardless of where they are located.
+
 #
-# TODO: transcripts that overlap no genes -> give it a pseudoname, e.g. near_TGGT10001
-#   need to number these too (e.g. *a, *b)
-
-
-
+# TODO: intergenic transcripts need to have their gene name numbered: e.g. :a, :b
