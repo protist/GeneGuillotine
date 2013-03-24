@@ -54,12 +54,17 @@ OptionParser.new do |opts|
           'PILEUP_FILE (from samtools mpileup) is required.') do |p|
     options[:pileup_path] = p
   end
+  opts.on('-o', '--output OUTPUT_FILE',
+          'OUTPUT_FILE is required.') do |o|
+    options[:output_path] = o
+  end
 end.parse!
 
 # Mandatory "options"
 raise OptionParser::MissingArgument if options[:mygtf_path].nil? ||
     options[:refgff_path].nil? ||
-    options[:pileup_path].nil?
+    options[:pileup_path].nil? ||
+    options[:output_path].nil?
 
 # Ruby 1.9.2 is required for ordered hash. Otherwise, I could hash.sort every time. But I won't.
 min_release = '1.9.2'
@@ -126,7 +131,7 @@ class UserTranscripts
   # coordinates if they increase the boundaries.
   # {:chromosome => {:transcript_id => {
   #   :coords => [[start, end], [start, end]…],
-  #   :other => ["+/-/.", "\"oId "CUFF.506.1\"; tss_id \"TSS678\""]}}}
+  #   :other => ["+/-/.", "\"oId ... to end"]}}}
   # Then later add :gene_id for each transcript.
   def write_transcript(chromosome, transcript_id, start, stop, strand, notes)
     # Possible speedup: rather than checking for existence of chromosome and
@@ -196,15 +201,15 @@ class UserTranscripts
     @transcripts_by_chromosome[chromosome][transcript_id][:gene_id] = gene_id
   end
 
-  # Add to list of transcripts to split.
+  # Add to list of transcripts to split (later).
   def define_split(chromosome, transcript_id, split_coord)
     @replacement_transcripts[chromosome] ||= {}
     @replacement_transcripts[chromosome][transcript_id] ||= []
     @replacement_transcripts[chromosome][transcript_id].push(split_coord)
   end
 
-  # Actually make the splits. Call this after the loop is completed, to prevent
-  #   problems with changing order of hash, and having to unnecessarily read new
+  # Make the splits. Call this after the loop is completed, to prevent problems
+  #   with changing order of hash, and having to unnecessarily read new
   #   positions from the end.
   def split!
     @replacement_transcripts.each do |chromosome, transcripts_to_split_by_chromosome|
@@ -253,12 +258,32 @@ class UserTranscripts
       end
     end
   end
+
+  # Write to a file in the same format as the input gtf.
+  #   I won't worry about writing exon number nor gene name for now.
+  def write_to_file(output_path)
+    File.open(output_path, "w") do |output_file|
+      @transcripts_by_chromosome.each do |chromosome_name, transcripts|
+        transcripts.each do |transcript_id, transcript_info|
+          other = transcript_info[:other]
+          transcript_info[:coords].each do |exon_coords|
+            output_line = [chromosome_name, "Cufflinks", "exon", \
+                exon_coords.first, exon_coords.last, ".", other[0], ".", \
+                "gene_id \"#{transcript_info[:gene_id]}\"; "\
+                "transcript_id \"#{transcript_id}\"; #{other[1]}"]
+            output_file.puts(output_line.join("\t"))
+          end
+        end
+      end
+    end
+  end
 end
 
 # Read transcripts from cuffmerge out
 #   chr <Cufflinks> <exon> start end <.> +/-/. <.> gene_id "XLOC_000384";
 #     transcript_id "TCONS_00001640"; exon_number "3"; oId "CUFF.506.1"; tss_id "TSS678";
 #     occasionally, ends with oId "CUFF.1863.2"; contained_in "TCONS_00005635"; tss_id "TSS2590";
+#     Also occasionally has nearest_ref and class_code after oId.
 #     if strand == "-", exons are still in increasing order.
 #   everything in <> is consistent across the whole file, so don't bother storing it.
 #   chr and transcript_id will be stored as a key.
@@ -566,8 +591,6 @@ end
 
 transcripts.split!
 
-# print transcripts.overlap_stats
-# p transcripts.transcripts_by_chromosome
 ################################################################################
 ### Find overlapping transcripts with different gene IDs
 # what about ALAD-SPP?
@@ -584,3 +607,8 @@ transcripts.split!
 
 #
 # TODO: intergenic transcripts need to have their gene name numbered: e.g. :a, :b
+
+# print transcripts.overlap_stats
+# p transcripts.transcripts_by_chromosome
+
+transcripts.write_to_file(options[:output_path])
