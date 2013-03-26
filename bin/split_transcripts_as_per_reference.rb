@@ -32,9 +32,9 @@ require 'optparse'
 options = {}
 OptionParser.new do |opts|
   opts.banner='This script reads in a gtf file, and splits it into non-'\
-              'overlapping genes, with one gene per gene according to a second'\
-              '(reference) gff. This might be useful if a downstream program'\
-              '(e.g. DEXSeq) requires each gene to be separate and not'\
+              'overlapping genes, with one gene per gene according to a second '\
+              '(reference) gff. This might be useful if a downstream program '\
+              '(e.g. DEXSeq) requires each gene to be separate and not '\
               "overlapping with its neighbours.\nUsage:"
   opts.on_tail('-h', '--help', 'Show this message') do
     puts opts; exit
