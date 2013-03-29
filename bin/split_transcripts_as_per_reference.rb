@@ -262,13 +262,13 @@ class UserTranscripts
   # Write to a file in the same format as the input gtf.
   #   I won't worry about writing exon number nor gene name for now.
   def write_to_file(output_path)
-    File.open(output_path, "w") do |output_file|
+    File.open(output_path, 'w') do |output_file|
       @transcripts_by_chromosome.each do |chromosome_name, transcripts|
         transcripts.each do |transcript_id, transcript_info|
           other = transcript_info[:other]
           transcript_info[:coords].each do |exon_coords|
-            output_line = [chromosome_name, "Cufflinks", "exon", \
-                exon_coords.first, exon_coords.last, ".", other[0], ".", \
+            output_line = [chromosome_name, 'Cufflinks', 'exon', \
+                exon_coords.first, exon_coords.last, '.', other[0], '.', \
                 "gene_id \"#{transcript_info[:gene_id]}\"; "\
                 "transcript_id \"#{transcript_id}\"; #{other[1]}"]
             output_file.puts(output_line.join("\t"))
