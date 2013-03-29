@@ -211,6 +211,9 @@ class UserTranscripts
   # Make the splits. Call this after the loop is completed, to prevent problems
   #   with changing order of hash, and having to unnecessarily read new
   #   positions from the end.
+  # TODO: don't split if directly adjacent to CDS. Read in option to specify
+  #   minimum distance to CDS, either as percent of the intron, or an absolute
+  #   value.
   def split!
     @replacement_transcripts.each do |chromosome, transcripts_to_split_by_chromosome|
       transcripts_to_split_by_chromosome.each do |parent_transcript_id, split_coords|
@@ -318,6 +321,8 @@ class ReferenceGFF
     @genes_by_chromosome = genes_by_chromosome
   end
 
+  attr_reader(:genes_by_chromosome) # for debugging
+
   # Create a new chromosome and gene id if necessary, and replace start and stop
   # coordinates if they increase the boundaries.
   # {:chromosome => {:geneID => [start, stop]} }
@@ -338,15 +343,41 @@ class ReferenceGFF
 
   # For each chromosome, sort genes by start coordinates.
   def sort!
-    @genes_by_chromosome.each do |chromosome, gene_for_this_chromosome|
-      sorted_chromosome = Hash[gene_for_this_chromosome.sort_by { |_, coords| coords[0] }]
-      if sorted_chromosome.keys == gene_for_this_chromosome.keys
+    @genes_by_chromosome.each do |chromosome, genes_for_this_chromosome|
+      sorted_chromosome = Hash[genes_for_this_chromosome.sort_by { |_, coords| coords[0] }]
+      if sorted_chromosome.keys == genes_for_this_chromosome.keys
         puts "#{Time.new}:   chromosome #{chromosome} was sorted correctly."
       else
         puts "#{Time.new}:   WARNING! Chromosome #{chromosome} was not sorted correctly (but now it is)."
         @genes_by_chromosome[chromosome] = sorted_chromosome
       end
     end
+  end
+
+  # Make sure adjacent genes do not overlap (or touch), by splitting them at the midpoint.
+  def remove_overlaps
+    overlap_count = 0
+    total_count = 0
+    @genes_by_chromosome.each do |chromosome, genes_for_this_chromosome|
+      prev_gene_id = nil
+      genes_for_this_chromosome.each do |gene_id, coords|
+        if prev_gene_id
+        total_count += 1
+          if genes_for_this_chromosome[prev_gene_id].last >= coords.first - 1
+            overlap_count += 1
+            midpoint = ((genes_for_this_chromosome[prev_gene_id].last + coords.first)/2).to_i
+            @genes_by_chromosome[chromosome][prev_gene_id][1] = midpoint - 1
+            @genes_by_chromosome[chromosome][gene_id][0] = midpoint + 1
+            puts "#{Time.new}:   WARNING! genes #{prev_gene_id.to_s} and "\
+              "#{gene_id.to_s} on #{chromosome} overlap by "\
+              "#{genes_for_this_chromosome[prev_gene_id].last - coords.first + 1}"\
+              " bp."
+          end
+        end
+        prev_gene_id = gene_id
+      end
+    end
+    [overlap_count, total_count]
   end
 
   # Return a list of the chromosomes as an array. Unused at the moment.
@@ -394,10 +425,13 @@ File.open(options[:refgff_path]).each do |line|
     refgff.write_gene(splitline[0], /Parent=rna_(.*)-1$/.match(splitline[8])[1], splitline[3].to_i, splitline[4].to_i)
   end
 end
+# TODO: also import rRNA from reference GFF
 
 # Check that file is ordered.
 puts "#{Time.new}: checking order of reference gff file."
 refgff.sort!
+puts "#{Time.new}: checking reference gff file for overlapping genes."
+refgff.remove_overlaps
 
 # TODO: What if genes from this file overlap? If that happens, then cut genes between terminal CDSs
 
