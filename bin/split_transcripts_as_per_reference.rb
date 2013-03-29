@@ -354,8 +354,17 @@ class ReferenceGFF
     end
   end
 
-  # Make sure adjacent genes do not overlap (or touch), by splitting them at the midpoint.
-  def remove_overlaps
+  # Check to see if adjacent genes overlap (or touch).
+  #   Originally, I attempted to fix this by splitting adjacent genes at the
+  #   midpoint. There are a few issues with this. Firstly, this code will check
+  #   for the presence of overlap, but may miss some multiple cases (e.g. if
+  #   three genes overlap). Also, sometimes a quick fix of splitting at the
+  #   midpoint is inappropriate. It's better to notify the user that there are
+  #   issues and let them manually fix it (e.g. by deleting one of the genes).
+  # N.B. an "overlap" of
+  # For toxodb files, there are only 3 and 14 overlaps for GT1 and ME49
+  #   respectively anyway.
+  def check_overlaps
     overlap_count = 0
     total_count = 0
     @genes_by_chromosome.each do |chromosome, genes_for_this_chromosome|
@@ -365,11 +374,8 @@ class ReferenceGFF
         total_count += 1
           if genes_for_this_chromosome[prev_gene_id].last >= coords.first - 1
             overlap_count += 1
-            midpoint = ((genes_for_this_chromosome[prev_gene_id].last + coords.first)/2).to_i
-            @genes_by_chromosome[chromosome][prev_gene_id][1] = midpoint - 1
-            @genes_by_chromosome[chromosome][gene_id][0] = midpoint + 1
-            puts "#{Time.new}:   WARNING! genes #{prev_gene_id.to_s} and "\
-              "#{gene_id.to_s} on #{chromosome} overlap by "\
+            puts "#{Time.new}:   ERROR! On #{chromosome}, genes "\
+              "#{prev_gene_id.to_s} and #{gene_id.to_s} overlap by (at least) "\
               "#{genes_for_this_chromosome[prev_gene_id].last - coords.first + 1}"\
               " bp."
           end
@@ -377,7 +383,9 @@ class ReferenceGFF
         prev_gene_id = gene_id
       end
     end
-    [overlap_count, total_count]
+    if overlap_count > 0
+      abort("#{Time.new}:   ERROR! #{overlap_count} overlaps reported.")
+    end
   end
 
   # Return a list of the chromosomes as an array. Unused at the moment.
@@ -431,7 +439,7 @@ end
 puts "#{Time.new}: checking order of reference gff file."
 refgff.sort!
 puts "#{Time.new}: checking reference gff file for overlapping genes."
-refgff.remove_overlaps
+refgff.check_overlaps
 
 # TODO: What if genes from this file overlap? If that happens, then cut genes between terminal CDSs
 
