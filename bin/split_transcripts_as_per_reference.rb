@@ -181,7 +181,7 @@ class UserTranscripts
 
   # Add to statistics about where transcripts lie.
   #   e.g. {:NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1},
-  #   with :NA for no ref genes, and 0 for both intergenic and terminal.
+  #   with :NA for no ref contig, and 0 for both intergenic and terminal.
   def add_event(num_genes_overlap)
     @overlap_stats[num_genes_overlap] ||= 0
     @overlap_stats[num_genes_overlap] += 1
@@ -189,7 +189,7 @@ class UserTranscripts
 
   # Output statistics about where the transcripts lie.
   #   e.g. {:NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1},
-  #   with :NA for no ref genes, and 0 for both intergenic and terminal.
+  #   with :NA for no ref contig, and 0 for both intergenic and terminal.
   def overlap_stats
     output_hash = @overlap_stats.select { |key, _| key==:NA}
     output_hash.merge(Hash[@overlap_stats.select {|key, _| key!=:NA}.
@@ -377,7 +377,7 @@ class ReferenceGFF
             puts "#{Time.new}:   ERROR! On #{chromosome}, genes "\
               "#{prev_gene_id.to_s} and #{gene_id.to_s} overlap by (at least) "\
               "#{genes_for_this_chromosome[prev_gene_id].last - coords.first + 1}"\
-              " bp."
+              ' bp.'
           end
         end
         prev_gene_id = gene_id
@@ -440,8 +440,6 @@ puts "#{Time.new}: checking order of reference gff file."
 refgff.sort!
 puts "#{Time.new}: checking reference gff file for overlapping genes."
 refgff.check_overlaps
-
-# TODO: What if genes from this file overlap? If that happens, then cut genes between terminal CDSs
 
 ################################################################################
 ### Read pileup file (from samtools mpileup)
@@ -632,11 +630,34 @@ transcripts.chromosome_names.each do |chromosome|
 end
 
 transcripts.split!
+puts "#{Time.new}: statistics for transcripts that overlap multiple reference genes."
+transcripts.overlap_stats.each do |genes, count|
+  if genes == :NA
+    if count == 1
+      puts "  1 transcript has no matching reference contig"
+    else
+      puts "  #{count} transcripts have no matching reference contig"
+    end
+  else
+    if count == 1
+      puts "  1 transcript overlaps with #{genes} genes"
+    else
+      puts "  #{count} transcripts overlap with #{genes} genes each"
+    end
+  end
+end
 
 ################################################################################
 ### Find overlapping transcripts with different gene IDs
-# what about ALAD-SPP?
+# TODO: what about ALAD-SPP?
 # only terminal exons? or not if they share the same tss? Getting complicated!
+
+
+# Save cut points used previously. If they still fall in between the overlap, it
+#   makes sense to reuse this (i.e. assume that the transcript overlap is less
+#   informative than the positions of the reference genes.) Otherwise, find the
+#   minimal pileup position again.
+
 
 
 ################################################################################
