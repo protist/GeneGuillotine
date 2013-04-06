@@ -156,9 +156,9 @@ class UserTranscripts
     @transcripts_by_chromosome.each do |chromosome, transcripts_for_this_chromosome|
       sorted_chromosome = Hash[transcripts_for_this_chromosome.sort_by { |_, value| value[:coords].first.first }]
       if sorted_chromosome.keys == transcripts_for_this_chromosome.keys
-        puts "#{Time.new}:   chromosome #{chromosome} was sorted correctly."
+        puts "#{Time.new}:   chromosome #{chromosome} was already ordered correctly."
       else
-        puts "#{Time.new}:   WARNING! Chromosome #{chromosome} was not sorted correctly (but now it is)."
+        puts "#{Time.new}:   chromosome #{chromosome} is now ordered correctly."
         @transcripts_by_chromosome[chromosome] = sorted_chromosome
       end
     end
@@ -201,7 +201,7 @@ class UserTranscripts
     @transcripts_by_chromosome[chromosome][transcript_id][:gene_id] = gene_id
   end
 
-  # Add to list of transcripts to split (later).
+  # Add to list of transcripts to split later.
   def define_split(chromosome, transcript_id, split_coord)
     @replacement_transcripts[chromosome] ||= {}
     @replacement_transcripts[chromosome][transcript_id] ||= []
@@ -260,6 +260,53 @@ class UserTranscripts
         @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
       end
     end
+  end
+
+  # If adjacent transcripts overlap, then truncate them.
+  def truncate_overlap (chromosome, transcript_id, trunc_coord, truncate_five_prime)
+    coords = @transcripts_by_chromosome[chromosome][transcript_id][:coords]
+    if !truncate_five_prime
+      coords.reverse! # hence truncate from the beginning of coords
+    end
+    if (truncate_five_prime && trunc_coord < coords.first.first) or \
+        (!truncate_five_prime && trunc_coord > coords.first.last)
+      end
+    found_split = false
+    while !found_split
+      if trunc_coord.between?(coords.first.first, coords.first.last) # in exon
+        found_split = true
+        if truncate_five_prime
+          if trunc_coord == coords.first.last
+            coords.shift
+          else
+            coords[0][0] = trunc_coord + 1
+          end
+        else
+          if trunc_coord == coords.first.first
+            coords.shift
+          else
+            coords[0][1] = trunc_coord - 1
+          end
+        end
+      else
+        # Check next intron. (Error if this follows the last exon, but should never occur.)
+        if truncate_five_prime
+          if trunc_coord.between?((coords.first.last + 1), (coords[1].first - 1))
+            found_split = true
+          end
+        else
+          if trunc_coord.between?((coords[1].last + 1), (coords.first.first - 1))
+            found_split = true
+          end
+        # Not in this exon, so move these coords to transcript.
+          coords.shift
+        end
+      end
+    end
+    if !truncate_five_prime
+      coords.reverse! # back to normal
+    end
+    @transcripts_by_chromosome[chromosome][transcript_id][:coords] = coords
   end
 
   # Write to a file in the same format as the input gtf.
@@ -634,7 +681,7 @@ puts "#{Time.new}: statistics for transcripts that overlap multiple reference ge
 transcripts.overlap_stats.each do |genes, count|
   if genes == :NA
     if count == 1
-      puts "  1 transcript has no matching reference contig"
+      puts '  1 transcript has no matching reference contig'
     else
       puts "  #{count} transcripts have no matching reference contig"
     end
@@ -649,14 +696,24 @@ end
 
 ################################################################################
 ### Find overlapping transcripts with different gene IDs
-# TODO: what about ALAD-SPP?
-# only terminal exons? or not if they share the same tss? Getting complicated!
+# TODO: what about ALAD-SPP? Only terminal exons? or not if they share the same tss? Getting complicated!
+# Use same cut points as used previously. If the overlap still contains this
+#   coordinate, they still fall in between the overlap, it makes sense to reuse
+#   this. Hence, assume that the transcript overlap is less informative than the
+#   positions of the reference genes. (I won't bother saving the previous split
+#   points, unless recalculation is slow.) If the overlap does not contain the
+#   split coordinate, find the minimal pileup position within the overlap.
 
+puts "#{Time.new}: re-sorting transcripts."
+transcripts.sort!
 
-# Save cut points used previously. If they still fall in between the overlap, it
-#   makes sense to reuse this (i.e. assume that the transcript overlap is less
-#   informative than the positions of the reference genes.) Otherwise, find the
-#   minimal pileup position again.
+puts "#{Time.new}: fixing adjacent overlapping transcripts."
+transcripts.chromosome_names.each do |chromosome|
+  puts "#{Time.new}:   analysing adjacent overlapping transcripts for #{chromosome}."
+
+#transcripts.truncate_overlap(chromosome, transcript_id, trunc_coord, truncate_five_prime)
+#TODO: remember to account for intergenic transcripts.
+end
 
 
 
