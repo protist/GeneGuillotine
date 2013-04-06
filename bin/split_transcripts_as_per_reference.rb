@@ -78,13 +78,9 @@ end
 ###   mostly be modified here, except were indicated.
 class String
 # Define the gene ID to use if the transcript does not overlap any genes.
-  # Transcript is intergenic, but closest to this upstream gene.
-  def after
-    'after_' + self
-  end
-  # Transcript is intergenic, but closest to this downstream gene.
-  def before
-    'before_' + self
+  # Transcript is intergenic.
+  def between(downstream_gene)
+    self + '_to_' + downstream_gene
   end
   # Transcript is after all annotated reference genes on this contig.
   def end
@@ -640,22 +636,15 @@ transcripts.chromosome_names.each do |chromosome|
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, position_of_first_overlapping_gene))
     elsif position_of_last_overlapping_gene < position_of_first_overlapping_gene # the transcript is wholly intergenic
-      upstream_coord = refgff.gene_coords(chromosome, position_of_last_overlapping_gene).last
-      downstream_coord = refgff.gene_coords(chromosome, position_of_first_overlapping_gene).first
-      transcript_start = transcripts.transcript_coords(chromosome, transcript_id).first.first
-      transcript_end = transcripts.transcript_coords(chromosome, transcript_id).last.last
-      if (transcript_start - upstream_coord) <= (downstream_coord - transcript_end)
-        nearest = {position: 'after', gene_id:
-            refgff.gene_id(chromosome, position_of_last_overlapping_gene)}
-      else
-        nearest = {position: 'before', gene_id:
-            refgff.gene_id(chromosome, position_of_first_overlapping_gene)}
-      end
       if options[:verbose]
-        puts "intergenic, #{nearest[:position]} #{nearest[:gene_id]}"
+        puts 'intergenic, between '\
+            "#{refgff.gene_id(chromosome, position_of_last_overlapping_gene)} and "\
+            "#{refgff.gene_id(chromosome, position_of_first_overlapping_gene)}"
       end
       transcripts.add_event(0)
-      transcripts.write_gene_id(chromosome, transcript_id, nearest[:gene_id].send(nearest[:position]))
+      transcripts.write_gene_id(chromosome, transcript_id, \
+          [refgff.gene_id(chromosome, position_of_last_overlapping_gene), \
+          refgff.gene_id(chromosome, position_of_first_overlapping_gene)])
     else # Covers multiple genes. Find and record split positions.
       if options[:verbose]
         puts "covers #{position_of_last_overlapping_gene - \
@@ -712,7 +701,7 @@ transcripts.chromosome_names.each do |chromosome|
   puts "#{Time.new}:   analysing adjacent overlapping transcripts for #{chromosome}."
 
 #transcripts.truncate_overlap(chromosome, transcript_id, trunc_coord, truncate_five_prime)
-#TODO: remember to account for intergenic transcripts.
+#TODO: remember to account for intergenic transcripts, including write_to_file
 end
 
 
