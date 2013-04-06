@@ -198,10 +198,11 @@ class UserTranscripts
   end
 
   # Add to list of transcripts to split later.
-  def define_split(chromosome, transcript_id, split_coord)
+  def define_split(chromosome, transcript_id, split_coord, upstream_gene_id)
     @replacement_transcripts[chromosome] ||= {}
-    @replacement_transcripts[chromosome][transcript_id] ||= []
-    @replacement_transcripts[chromosome][transcript_id].push(split_coord)
+    @replacement_transcripts[chromosome][transcript_id] ||= {coords:[], upstream_gene_ids:[]}
+    @replacement_transcripts[chromosome][transcript_id][:coords].push(split_coord)
+    @replacement_transcripts[chromosome][transcript_id][:upstream_gene_ids].push(upstream_gene_id)
   end
 
   # Make the splits. Call this after the loop is completed, to prevent problems
@@ -212,10 +213,10 @@ class UserTranscripts
   #   value.
   def split!
     @replacement_transcripts.each do |chromosome, transcripts_to_split_by_chromosome|
-      transcripts_to_split_by_chromosome.each do |parent_transcript_id, split_coords|
+      transcripts_to_split_by_chromosome.each do |parent_transcript_id, split_info|
         working_transcript = @transcripts_by_chromosome[chromosome].delete(parent_transcript_id)
         first_iteration = true
-        split_coords.each do |split_coord|
+        split_info[:coords].each_with_index do |split_coord, index|
           if first_iteration
             new_transcript_id = parent_transcript_id.to_s.multiple.to_sym
             first_iteration = false
@@ -250,8 +251,9 @@ class UserTranscripts
                   push(working_transcript[:coords].shift)
             end
           end
+          self.write_gene_id(chromosome, new_transcript_id, split_info[:upstream_gene_ids][index])
         end
-        # Write final transcript.
+        # Write last transcript. N.B. gene ID already set from parent transcript.
         new_transcript_id = transcripts_by_chromosome[chromosome].keys.last.to_s.multiple.to_sym
         @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
       end
@@ -654,12 +656,13 @@ transcripts.chromosome_names.each do |chromosome|
       end
       transcripts.add_event(position_of_last_overlapping_gene - position_of_first_overlapping_gene + 1)
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
-          gene_id(chromosome, position_of_first_overlapping_gene))
+          gene_id(chromosome, position_of_last_overlapping_gene)) # Temporarily store this gene id for the entire transcript (easier when naming fragments later).
       (position_of_first_overlapping_gene..(position_of_last_overlapping_gene - 1)).
           each do |position_of_upstream_gene|
         split_coord = pileup.minimum(chromosome, (refgff.gene_coords(chromosome, position_of_upstream_gene).
             last + 1), (refgff.gene_coords(chromosome, position_of_upstream_gene + 1).first - 1))
-        transcripts.define_split(chromosome, transcript_id, split_coord)
+        transcripts.define_split(chromosome, transcript_id, split_coord, refgff.
+            gene_id(chromosome, position_of_upstream_gene))
       end
     end
   end
