@@ -93,13 +93,10 @@ class String
 
 # Define the gene ID to use if the transcript overlaps multiple genes.
   def multiple
-    first_suffix = ':a'
-    last_suffix = ':z'
-    suffix_regex = /:[a-z]$/
+    second_suffix = ':2'
+    suffix_regex = /:[0-9]*$/
     if !(self =~ suffix_regex)
-      self + first_suffix
-    elsif self.end_with? last_suffix
-      abort("Too many multiples for #{self.chomp(last_suffix)}")
+      self + second_suffix
     else
       self.next
     end
@@ -120,7 +117,8 @@ class UserTranscripts
     @overlap_stats = overlap_stats # e.g. {NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1}
                                    # where NA is for no genes, and 0 encompasses
                                    # both intergenic and terminal.
-    @replacement_transcripts = {}
+    @transcripts_to_split = {}
+    @previously_split_transcripts = {} # {:parent_transcript_id => :transcript_id:last#}
   end
 
   # Create a new chromosome and gene id if necessary, and replace start and stop
@@ -145,7 +143,7 @@ class UserTranscripts
     @transcripts_by_chromosome[chromosome.to_sym][transcript_id.to_sym][:other] ||= [strand, notes]
   end
 
-  attr_reader(:transcripts_by_chromosome, :replacement_transcripts) # for debugging
+  attr_reader(:transcripts_by_chromosome, :transcripts_to_split, :previously_split_transcripts) # for debugging
 
   # For each chromosome, sort genes by start coordinates.
   def sort!
@@ -199,10 +197,27 @@ class UserTranscripts
 
   # Add to list of transcripts to split later.
   def define_split(chromosome, transcript_id, split_coord, upstream_gene_id)
-    @replacement_transcripts[chromosome] ||= {}
-    @replacement_transcripts[chromosome][transcript_id] ||= {coords:[], upstream_gene_ids:[]}
-    @replacement_transcripts[chromosome][transcript_id][:coords].push(split_coord)
-    @replacement_transcripts[chromosome][transcript_id][:upstream_gene_ids].push(upstream_gene_id)
+    @transcripts_to_split[chromosome] ||= {}
+    @transcripts_to_split[chromosome][transcript_id] ||= {coords:[], upstream_gene_ids:[]}
+    @transcripts_to_split[chromosome][transcript_id][:coords].push(split_coord)
+    @transcripts_to_split[chromosome][transcript_id][:upstream_gene_ids].push(upstream_gene_id)
+  end
+
+  # Find next transcript_id to use when splitting transcripts, and record
+  #   biggest used transcript_id.
+  def advance_transcript_id(base_transcript_id, used_transcript_id)
+    if used_transcript_id == base_transcript_id # @previously_split_transcripts[base_transcript_id] may or may not exist
+      previously_first_unused_transcript_id = used_transcript_id # not necessarily, but follow this conditional below.
+    else
+      previously_last_used_transcript_id = @previously_split_transcripts[base_transcript_id]
+      previously_first_unused_transcript_id = previously_last_used_transcript_id.to_s.multiple.to_sym
+    end
+    if used_transcript_id == previously_first_unused_transcript_id # i.e. used the transcript at the head.
+      @previously_split_transcripts[base_transcript_id] = used_transcript_id
+      used_transcript_id.to_s.multiple.to_sym
+    else
+      previously_first_unused_transcript_id
+    end
   end
 
   # Make the splits. Call this after the loop is completed, to prevent problems
@@ -211,53 +226,62 @@ class UserTranscripts
   # TODO: don't split if directly adjacent to CDS. Read in option to specify
   #   minimum distance to CDS, either as percent of the intron, or an absolute
   #   value.
+  # If split_coord lies outside transcript, do nothing.
+  # TODO: if you keep splitting a transcript until there is nothing left, then
+  #   there will be an error. But this is surely implausible?
   def split!
-    @replacement_transcripts.each do |chromosome, transcripts_to_split_by_chromosome|
+    @transcripts_to_split.each do |chromosome, transcripts_to_split_by_chromosome|
       transcripts_to_split_by_chromosome.each do |parent_transcript_id, split_info|
         working_transcript = @transcripts_by_chromosome[chromosome].delete(parent_transcript_id)
-        first_iteration = true
+        if !working_transcript[:base_transcript_id]
+          working_transcript[:base_transcript_id] = parent_transcript_id
+        end
+        new_transcript_id = parent_transcript_id
         split_info[:coords].each_with_index do |split_coord, index|
-          if first_iteration
-            new_transcript_id = parent_transcript_id.to_s.multiple.to_sym
-            first_iteration = false
-          else
-            new_transcript_id = transcripts_by_chromosome[chromosome].keys.last.to_s.multiple.to_sym
-          end
-          @transcripts_by_chromosome[chromosome][new_transcript_id] = \
-              {coords: [], other: working_transcript[:other]}
-          found_split = false
-          while !found_split
-            if split_coord.between?(working_transcript[:coords].first.first, \
-                working_transcript[:coords].first.last) # in exon
-              found_split = true
-              if !(split_coord == working_transcript[:coords].first.first)
-                @transcripts_by_chromosome[chromosome][new_transcript_id][:coords].
-                    push([working_transcript[:coords].first.first, (split_coord - 1)])
-              end
-              # How much of the working transcript do we retain?
-              if split_coord == working_transcript[:coords].first.last
-                working_transcript[:coords].shift
-              else
-                working_transcript[:coords][0][0] = split_coord + 1
-              end
-            else
-              # Check next intron. (Error if this follows the last exon, but should never occur.)
-              if split_coord.between?((working_transcript[:coords].first.last + 1), \
-                  (working_transcript[:coords][1].first - 1))
+          if split_coord.between?(working_transcript[:coords].first.first, \
+              working_transcript[:coords].last.last) # split within transcript
+            found_split = false
+            new_transcript_coords = []
+            while !found_split
+              if split_coord.between?(working_transcript[:coords].first.first, \
+                  working_transcript[:coords].first.last) # in exon
                 found_split = true
+                # Add this exon if its length is non-zero.
+                if !(split_coord == working_transcript[:coords].first.first)
+                  new_transcript_coords.push([working_transcript[:coords].first.first, (split_coord - 1)])
+                end
+                # How much of the working transcript do we retain?
+                if split_coord == working_transcript[:coords].first.last
+                  working_transcript[:coords].shift
+                else
+                  working_transcript[:coords][0][0] = split_coord + 1
+                end
+              else
+                # Check next intron. (Error following the last exon, but won't occur.)
+                if split_coord.between?((working_transcript[:coords].first.last + 1), \
+                    (working_transcript[:coords][1].first - 1))
+                  found_split = true
+                end
+                # Not in this exon, so move these coords to transcript.
+                new_transcript_coords.push(working_transcript[:coords].shift)
               end
-              # Not in this exon, so move these coords to transcript.
-              @transcripts_by_chromosome[chromosome][new_transcript_id][:coords].
-                  push(working_transcript[:coords].shift)
+            end
+            # Write this just-split transcript if non-zero.
+            if !(new_transcript_coords == [])
+              @transcripts_by_chromosome[chromosome][new_transcript_id] = \
+                  {coords: new_transcript_coords, other: working_transcript[:other], base_transcript_id: working_transcript[:base_transcript_id]}
+              self.write_gene_id(chromosome, new_transcript_id, split_info[:upstream_gene_ids][index])
+              new_transcript_id = self.advance_transcript_id(working_transcript[:base_transcript_id], new_transcript_id)
             end
           end
-          self.write_gene_id(chromosome, new_transcript_id, split_info[:upstream_gene_ids][index])
         end
         # Write last transcript. N.B. gene ID already set from parent transcript.
-        new_transcript_id = transcripts_by_chromosome[chromosome].keys.last.to_s.multiple.to_sym
+        # TODO: if non-zero?
         @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
+        self.advance_transcript_id(working_transcript[:base_transcript_id], new_transcript_id)
       end
     end
+    @transcripts_to_split = {}
   end
 
   # If adjacent transcripts overlap, then truncate them.
@@ -697,7 +721,7 @@ end
 #   split coordinate, find the minimal pileup position within the overlap.
 
 puts "#{Time.new}: re-sorting transcripts."
-transcripts.sort!
+#transcripts.sort!
 
 puts "#{Time.new}: fixing adjacent overlapping transcripts."
 transcripts.chromosome_names.each do |chromosome|
