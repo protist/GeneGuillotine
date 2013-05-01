@@ -1,4 +1,5 @@
 ##gff-version   3
+# Using this file should fail. The script should direct the user to fix the overlaps.
 TGGT1_chrII	ApiDB	gene	2168085	2198765	.	-	.	ID=TGGT1_096100;Name=TGGT1_096100;description=conserved+hypothetical+protein;size=30681;web_id=TGGT1_096100;locus_tag=TGGT1_096100;size=30681;Alias=EEE19942.1,TGGT1_096100,jcvi:cds.TGRH_096100A,221481560
 TGGT1_chrII	ApiDB	mRNA	2168085	2198765	.	-	.	ID=rna_TGGT1_096100-1;Name=TGGT1_096100-1;description=TGGT1_096100-1;size=30681;Parent=TGGT1_096100;Dbxref=ApiDB_ToxoDB:TGGT1_096100,NCBI_gi:221481560,taxon:507601
 TGGT1_chrII	ApiDB	CDS	10	30	.	-	0	ID=cds_TGGT1_096100-1;Name=cds;description=.;size=180;Parent=rna_TGGT1_010-1
