@@ -315,8 +315,8 @@ TGGT1_chrIV	74	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrIV	75	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrIV	76	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrIV	77	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
-TGGT1_chrIV	78	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
-TGGT1_chrIV	79	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
+TGGT1_chrIV	78	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
+TGGT1_chrIV	79	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrIV	80	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrIV	81	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrIV	82	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
@@ -435,8 +435,8 @@ TGGT1_chrV	74	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrV	75	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrV	76	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrV	77	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
-TGGT1_chrV	78	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
-TGGT1_chrV	79	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
+TGGT1_chrV	78	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
+TGGT1_chrV	79	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrV	80	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrV	81	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrV	82	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
@@ -555,8 +555,8 @@ TGGT1_chrVI	74	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVI	75	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVI	76	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVI	77	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
-TGGT1_chrVI	78	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
-TGGT1_chrVI	79	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
+TGGT1_chrVI	78	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
+TGGT1_chrVI	79	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVI	80	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVI	81	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVI	82	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
@@ -675,8 +675,8 @@ TGGT1_chrVII	74	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVII	75	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVII	76	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVII	77	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
-TGGT1_chrVII	78	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
-TGGT1_chrVII	79	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
+TGGT1_chrVII	78	N	1	read_bases_to_be_ignored	base_qualities_to_be_ignored
+TGGT1_chrVII	79	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVII	80	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVII	81	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
 TGGT1_chrVII	82	N	5	read_bases_to_be_ignored	base_qualities_to_be_ignored
