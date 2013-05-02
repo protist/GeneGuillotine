@@ -76,29 +76,29 @@ end
 ################################################################################
 ### Define string modifiers when transcripts aren't on one gene. These can
 ###   mostly be modified here, except were indicated.
-class String
+class Symbol
 # Define the gene ID to use if the transcript does not overlap any genes.
   # Transcript is intergenic.
   def between(downstream_gene)
-    self + '_to_' + downstream_gene
+    (self.to_s + '_to_' + downstream_gene.to_s).to_sym
   end
   # Transcript is after all annotated reference genes on this contig.
   def end
-    'after_last_' + self
+    ('after_last_' + self.to_s).to_sym
   end
   # Transcript is before all annotated reference genes on this contig.
   def begin
-    'before_first_' + self
+    ('before_first_' + self.to_s).to_sym
   end
 
-# Define the gene ID to use if the transcript overlaps multiple genes.
+# Define the transcript ID to use if the transcript needs to be split.
   def multiple
     second_suffix = ':2'
     suffix_regex = /:[0-9]*$/
-    if !(self =~ suffix_regex)
-      self + second_suffix
+    if !(self.to_s =~ suffix_regex)
+      (self.to_s + second_suffix).to_sym
     else
-      self.next
+      self.to_s.next.to_sym
     end
   end
 end
@@ -146,6 +146,7 @@ class UserTranscripts
   attr_reader(:transcripts_by_chromosome, :transcripts_to_split, :previously_split_transcripts) # for debugging
 
   # For each chromosome, sort genes by start coordinates.
+  # TODO: sort coordinates?
   def sort!
     @transcripts_by_chromosome.each do |chromosome, transcripts_for_this_chromosome|
       sorted_chromosome = Hash[transcripts_for_this_chromosome.sort_by { |_, value| value[:coords].first.first }]
@@ -169,7 +170,7 @@ class UserTranscripts
   end
 
   # Return transcript_ids for a given chromosome, as an array.
-  def transcript_names(chromosome)
+  def transcript_ids(chromosome)
     @transcripts_by_chromosome[chromosome].keys
   end
 
@@ -210,11 +211,11 @@ class UserTranscripts
       previously_first_unused_transcript_id = used_transcript_id # not necessarily, but follow this conditional below.
     else
       previously_last_used_transcript_id = @previously_split_transcripts[base_transcript_id]
-      previously_first_unused_transcript_id = previously_last_used_transcript_id.to_s.multiple.to_sym
+      previously_first_unused_transcript_id = previously_last_used_transcript_id.multiple
     end
     if used_transcript_id == previously_first_unused_transcript_id # i.e. used the transcript at the head.
       @previously_split_transcripts[base_transcript_id] = used_transcript_id
-      used_transcript_id.to_s.multiple.to_sym
+      used_transcript_id.multiple
     else
       previously_first_unused_transcript_id
     end
@@ -284,7 +285,36 @@ class UserTranscripts
     @transcripts_to_split = {}
   end
 
-  # If adjacent transcripts overlap, then truncate them.
+  # Return transcript ids that have a given gene id. If no transcripts for that
+  #   gene (or chromosome), return nil. Also return the minimum and maximum
+  #   coordinates for these transcripts. Return as [array of transcripts,
+  #   [min/max coords]]
+  def transcripts_and_coords_union_for_gene(chromosome, gene_id)
+    if @transcripts_by_chromosome[chromosome]
+      transcripts_for_this_gene = @transcripts_by_chromosome[chromosome].select do |_, transcript|
+        transcript[:gene_id] == gene_id
+      end
+      if transcripts_for_this_gene == []
+        nil
+      else
+        union_coords = [Float::INFINITY , -Float::INFINITY]
+        transcripts_for_this_gene.each do |_, transcripts|
+          if transcripts[:coords].first.first < union_coords.first
+            union_coords[0] = transcripts[:coords].first.first
+          end
+          if union_coords.last < transcripts[:coords].last.last
+            union_coords[1] = transcripts[:coords].last.last
+          end
+        end
+        [transcripts_for_this_gene, union_coords]
+      end
+    else
+      nil
+    end
+  end
+
+  # If adjacent transcripts overlap, then truncate them. Unused at the moment.
+  # TODO: probably best to roll this into split!
   def truncate_overlap (chromosome, transcript_id, trunc_coord, truncate_five_prime)
     coords = @transcripts_by_chromosome[chromosome][transcript_id][:coords]
     if !truncate_five_prime
@@ -457,9 +487,14 @@ class ReferenceGFF
     end
   end
 
-  # Return a list of the chromosomes as an array. Unused at the moment.
-  def chromosomes
+  # Return names of the chromosomes as an array.
+  def chromosome_names
     @genes_by_chromosome.keys
+  end
+
+  # Return transcript_ids for a given chromosome, as an array.
+  def gene_ids(chromosome)
+    @genes_by_chromosome[chromosome].keys
   end
 
   # Return the length of the chromosome.
@@ -472,15 +507,21 @@ class ReferenceGFF
   end
 
   # Return an array of the start and end coordinates of the gene, given
+  # chromosome and gene_id
+  def gene_coords(chromosome, gene_id)
+    @genes_by_chromosome[chromosome][gene_id]
+  end
+
+  # Return an array of the start and end coordinates of the gene, given
   # chromosome and position in the ordered hash.
-  def gene_coords(chromosome, position)
+  def gene_coords_by_position(chromosome, position)
     # TODO: is it more efficient to store values and keys semi-permanently in separate arrays?
     @genes_by_chromosome[chromosome].values[position]
   end
 
   # Return the gene id, given chromosome and position in the ordered hash.
   def gene_id(chromosome, position)
-    @genes_by_chromosome[chromosome].keys[position].to_s
+    @genes_by_chromosome[chromosome].keys[position]
   end
 end
 
@@ -539,7 +580,10 @@ class Pileup
     end
   end
 
-  # Find most-central minimum, given chromosome and coordinate range
+  # Find most-central minimum, given chromosome and coordinate range.
+  # TODO: don't specify position directly adjacent to CDS. Add option to specify
+  #   minimum distance to CDS, either as percent of the intron, or an absolute
+  #   value.
   def minimum(chromosome, start, stop)
     max_coord_delta = ((stop - start)/2).to_i
     min_coord = nil
@@ -578,7 +622,7 @@ transcripts.chromosome_names.each do |chromosome|
   puts "#{Time.new}:   analysing multiple genes per transcript for #{chromosome}."
   base_position_in_refgff_chr = 0
   length_of_refgff_chr = refgff.chromosome_length(chromosome)
-  transcripts.transcript_names(chromosome).each do |transcript_id|
+  transcripts.transcript_ids(chromosome).each do |transcript_id|
     # For each transcript, find out into which (ref) genes the tss and tes fall.
     position_of_first_overlapping_gene = nil
     position_of_last_overlapping_gene = nil
@@ -591,7 +635,7 @@ transcripts.chromosome_names.each do |chromosome|
     #   genes, or if there are no references genes for this chromosome.
     testing_position_in_refgff_chr = base_position_in_refgff_chr
     while !position_of_first_overlapping_gene && (testing_position_in_refgff_chr <= (length_of_refgff_chr - 1))
-      testing_coords = refgff.gene_coords(chromosome, testing_position_in_refgff_chr)
+      testing_coords = refgff.gene_coords_by_position(chromosome, testing_position_in_refgff_chr)
       if tss > testing_coords.last # i.e. tss is downstream of gene, so reiterate.
         testing_position_in_refgff_chr += 1
         base_position_in_refgff_chr += 1
@@ -608,7 +652,7 @@ transcripts.chromosome_names.each do |chromosome|
       testing_position_in_refgff_chr -=1 # for transcripts that overlap no genes.
     end
     while !position_of_last_overlapping_gene && (testing_position_in_refgff_chr <= (length_of_refgff_chr - 1))
-      testing_coords = refgff.gene_coords(chromosome, testing_position_in_refgff_chr)
+      testing_coords = refgff.gene_coords_by_position(chromosome, testing_position_in_refgff_chr)
       if tes > testing_coords.last # i.e. tes is downstream of gene, but is it the last gene that overlaps?
         testing_position_in_refgff_chr += 1
       elsif tes >= testing_coords.first # i.e. tes is within gene
@@ -632,7 +676,7 @@ transcripts.chromosome_names.each do |chromosome|
         end
         transcripts.add_event(:NA)
         transcripts.write_gene_id(chromosome, transcript_id,
-                                  'No_genes_on_ref_contig')
+                                  :'No_genes_on_ref_contig')
       else # at the end of the chromosome
            # Could introduce this test earlier, and quickly mark all remaining
            #   transcripts identically, but there shouldn't be many, and it's
@@ -683,8 +727,8 @@ transcripts.chromosome_names.each do |chromosome|
           gene_id(chromosome, position_of_last_overlapping_gene)) # Temporarily store this gene id for the entire transcript (easier when naming fragments later).
       (position_of_first_overlapping_gene..(position_of_last_overlapping_gene - 1)).
           each do |position_of_upstream_gene|
-        split_coord = pileup.minimum(chromosome, (refgff.gene_coords(chromosome, position_of_upstream_gene).
-            last + 1), (refgff.gene_coords(chromosome, position_of_upstream_gene + 1).first - 1))
+        split_coord = pileup.minimum(chromosome, (refgff.gene_coords_by_position(chromosome, position_of_upstream_gene).
+            last + 1), (refgff.gene_coords_by_position(chromosome, position_of_upstream_gene + 1).first - 1))
         transcripts.define_split(chromosome, transcript_id, split_coord, refgff.
             gene_id(chromosome, position_of_upstream_gene))
       end
@@ -721,28 +765,112 @@ end
 #   split coordinate, find the minimal pileup position within the overlap.
 
 puts "#{Time.new}: re-sorting transcripts."
-#transcripts.sort!
+transcripts.sort!
 
-puts "#{Time.new}: fixing adjacent overlapping transcripts."
-transcripts.chromosome_names.each do |chromosome|
+puts "#{Time.new}: fixing overlapping transcripts on adjacent genes."
+refgff.chromosome_names.each do |chromosome|
   puts "#{Time.new}:   analysing adjacent overlapping transcripts for #{chromosome}."
+  prev_gene_transcripts_and_coords = nil
+  prev_gene_id = nil
+  refgff.gene_ids(chromosome).each do |current_gene_id|
+    current_gene_transcripts_and_coords = transcripts.
+        transcripts_and_coords_union_for_gene(chromosome, current_gene_id)
+    intergenic_transcripts_and_coords = transcripts.
+        transcripts_and_coords_union_for_gene(chromosome, \
+        [prev_gene_id, current_gene_id])
+    # TODO: what if intergenic transcripts do not overlap with each other? (They should have been assigned unique gene ids.)
+    split_coord = nil
+    if prev_gene_id # Not the first iteration.
+      if prev_gene_transcripts_and_coords && \
+          current_gene_transcripts_and_coords
+        # Is there overlap between the in-gene transcripts?
+        if prev_gene_transcripts_and_coords.last.last >= \
+          current_gene_transcripts_and_coords.last.first
+          if options[:verbose]
+            puts 'there is overlap between transcript(s) on genes ' \
+                "#{prev_gene_id} and #{current_gene_id}"
+          end
+          # Find potential cut point based on entire intergenic region
+          split_coord = pileup.minimum(chromosome, (refgff.gene_coords(
+              chromosome, prev_gene_id).last + 1), (refgff.gene_coords(
+              chromosome, current_gene_id).first - 1))
+          # If this doesn't lie in the overlap, then find a new split coord.
+          # TODO: Check to see if this split_coord lies within a larger overlap including the intergenic transcript
+          #   N.B. if intergenic transcripts don't overlap this overlap, then ignore.
+          # TODO: split_coord should be central in the intergenic region, not the overlap.
+          if !split_coord.between?(current_gene_transcripts_and_coords.last.first,
+                                   prev_gene_transcripts_and_coords.last.last)
+            split_coord = pileup.minimum(chromosome, current_gene_transcripts_and_coords.last.first,
+                                         prev_gene_transcripts_and_coords.last.last)
+          end
+        elsif intergenic_transcripts_and_coords && \
+            prev_gene_transcripts_and_coords.last.last >= \
+            intergenic_transcripts_and_coords.last.first && \
+            intergenic_transcripts_and_coords.last.last >= \
+            current_gene_transcripts_and_coords.last.first # intergenic overlaps both
+          if options[:verbose]
+            puts 'the intergenic transcript(s) overlap with transcript(s) on ' \
+                "genes #{prev_gene_id} and #{current_gene_id}"
+          end
+          # Find potential cut point based on entire intergenic region
+          split_coord = pileup.minimum(chromosome, (refgff.gene_coords(
+              chromosome, prev_gene_id).last + 1), (refgff.gene_coords(
+              chromosome, current_gene_id).first - 1))
+          # If this doesn't lie in the overlap, then find a new split coord.
+          # The overlap union's coordinates are identical to the intergenic
+          # transcripts'. I'm cutting as central as possible within this. There
+          # may be an argument for not prioritising this, nor the whole inter-
+          # genic region (as above), but it's unclear to me what would be the
+          # best place to cut. Perhaps even outside the overlap in this case?
+          # TODO: think about the best place to cut, as per this comment block.
+          if !split_coord.between?(intergenic_transcripts_and_coords.last.first,
+                                   intergenic_transcripts_and_coords.last.last)
+            split_coord = pileup.minimum(intergenic_transcripts_and_coords.last.first,
+                                         intergenic_transcripts_and_coords.last.last)
+          end
+        end
+        if split_coord
+          # Cut prev_gene, intergenic, and current_gene transcripts.
+          # TODO: these cut methods should be intelligent enough to not cut if the split_coord is outside the transcript.
+          prev_gene_transcripts_and_coords.first.keys.each do |transcript_id|
+            p transcript_id
+            #exit
+            transcripts.define_split(chromosome, transcript_id, split_coord, prev_gene_id)
+          end
+          intergenic_transcripts_and_coords.first.keys.each do |transcript_id|
+            transcripts.define_split(chromosome, transcript_id, split_coord, prev_gene_id)
+          end
+          current_gene_transcripts_and_coords.first.keys.each do |transcript_id|
+            transcripts.define_split(chromosome, transcript_id, split_coord, current_gene_id)
+          end
+        end
+      end
+    end
+    prev_gene_transcripts_and_coords = current_gene_transcripts_and_coords
+    prev_gene_id = current_gene_id
+  end
 
 #transcripts.truncate_overlap(chromosome, transcript_id, trunc_coord, truncate_five_prime)
-#TODO: remember to account for intergenic transcripts, including write_to_file
+# TODO: if it's the terminal exon, just truncate, otherwise, split? N.B. different to behaviour of processing in first stage. Maybe don't throw out anything.
+# TODO: perhaps just assign transcript ids at the end? In the meantime, just store in an array for the transcript id? Or just look for unique each time?
 end
 
-
+transcripts.split!
 
 ################################################################################
 ### Make gene name unique if transcripts do not overlap
 # DEXSeq trusts geneIDs. Hence, it combines two genes if they have the same
 #   geneID, regardless of where they are located.
 
-# TODO: if multiple, overlapping transcripts on a single gene -> they should share a gene ID. We are trusting the refgff gene limits.
+# TODO: if multiple, overlapping transcripts on a single gene -> they should share a gene ID. We are trusting the refgff gene limits. Or should we totally trust the ref?
 #   OTOH, if there are multiple non-overlapping transcripts on a single gene, we should break them up into -a, -b, etc.
+#   similarly for intergenic transcripts.
 
 #
 # TODO: intergenic transcripts need to have their gene name numbered: e.g. :a, :b
+# TODO: currently, intergenic transcripts have gene id as [:prev, :next].
+#   Need to change this to string.between(second_string)
+#   If intergenic transcripts overlap in-gene transcripts, just change their id to the relevant gene id?
 
 # print transcripts.overlap_stats
 # p transcripts.transcripts_by_chromosome
