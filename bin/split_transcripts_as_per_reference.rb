@@ -119,6 +119,7 @@ class UserTranscripts
                                    # both intergenic and terminal.
     @transcripts_to_split = {}
     @previously_split_transcripts = {} # {:parent_transcript_id => :transcript_id:last#}
+    @split_coord_from_phase_one = {}
   end
 
   # Create a new chromosome and gene id if necessary, and replace start and stop
@@ -196,7 +197,8 @@ class UserTranscripts
     @transcripts_by_chromosome[chromosome][transcript_id][:gene_id] = gene_id
   end
 
-  # Add to list of transcripts to split later.
+  # Add to list of transcripts to split later. Each member of :upstream_gene_id
+  #   corresponds with a member of :coord.
   def define_split(chromosome, transcript_id, split_coord, upstream_gene_id)
     @transcripts_to_split[chromosome] ||= {}
     @transcripts_to_split[chromosome][transcript_id] ||= {coords:[], upstream_gene_ids:[]}
@@ -219,6 +221,12 @@ class UserTranscripts
     else
       previously_first_unused_transcript_id
     end
+  end
+
+  # Record split (from phase one, to potentially reuse in phase two)
+  def record_split_coord(chromosome, upstream_gene_id, coord)
+    @split_coord_from_phase_one[chromosome] ||= {}
+    @split_coord_from_phase_one[chromosome][upstream_gene_id] = coord
   end
 
   # Make the splits. Call this after the loop is completed, to prevent problems
@@ -274,6 +282,8 @@ class UserTranscripts
               self.write_gene_id(chromosome, new_transcript_id, split_info[:upstream_gene_ids][index])
               new_transcript_id = self.advance_transcript_id(working_transcript[:base_transcript_id], new_transcript_id)
             end
+          elsif split_coord > working_transcript[:coords].last.last # hack to correct gene ID
+            working_transcript[:gene_id] = split_info[:upstream_gene_ids][index]
           end
         end
         # Write last transcript. N.B. gene ID already set from parent transcript.
@@ -729,8 +739,9 @@ transcripts.chromosome_names.each do |chromosome|
           each do |position_of_upstream_gene|
         split_coord = pileup.minimum(chromosome, (refgff.gene_coords_by_position(chromosome, position_of_upstream_gene).
             last + 1), (refgff.gene_coords_by_position(chromosome, position_of_upstream_gene + 1).first - 1))
-        transcripts.define_split(chromosome, transcript_id, split_coord, refgff.
-            gene_id(chromosome, position_of_upstream_gene))
+        upstream_gene_id = refgff.gene_id(chromosome, position_of_upstream_gene)
+        transcripts.define_split(chromosome, transcript_id, split_coord, upstream_gene_id)
+        transcripts.record_split_coord(chromosome, upstream_gene_id, split_coord)
       end
     end
   end
@@ -831,17 +842,11 @@ refgff.chromosome_names.each do |chromosome|
         end
         if split_coord
           # Cut prev_gene, intergenic, and current_gene transcripts.
-          # TODO: these cut methods should be intelligent enough to not cut if the split_coord is outside the transcript.
-          prev_gene_transcripts_and_coords.first.keys.each do |transcript_id|
-            p transcript_id
-            #exit
+          (prev_gene_transcripts_and_coords.first.keys + \
+              intergenic_transcripts_and_coords.first.keys + \
+              current_gene_transcripts_and_coords.first.keys).each do |transcript_id|
             transcripts.define_split(chromosome, transcript_id, split_coord, prev_gene_id)
-          end
-          intergenic_transcripts_and_coords.first.keys.each do |transcript_id|
-            transcripts.define_split(chromosome, transcript_id, split_coord, prev_gene_id)
-          end
-          current_gene_transcripts_and_coords.first.keys.each do |transcript_id|
-            transcripts.define_split(chromosome, transcript_id, split_coord, current_gene_id)
+            transcripts.write_gene_id(chromosome, transcript_id, current_gene_id)
           end
         end
       end
