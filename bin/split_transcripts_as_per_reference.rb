@@ -208,17 +208,18 @@ class UserTranscripts
 
   # Find next transcript_id to use when splitting transcripts, and record
   #   biggest used transcript_id.
-  def advance_transcript_id(base_transcript_id, used_transcript_id)
-    if used_transcript_id == base_transcript_id # @previously_split_transcripts[base_transcript_id] may or may not exist
-      previously_first_unused_transcript_id = used_transcript_id # not necessarily, but follow this conditional below.
-    else
-      previously_last_used_transcript_id = @previously_split_transcripts[base_transcript_id]
+  def advance_transcript_id(chromosome, base_transcript_id, just_used_transcript_id)
+    @previously_split_transcripts[chromosome] ||= {}
+    if @previously_split_transcripts[chromosome][base_transcript_id]
+      previously_last_used_transcript_id = @previously_split_transcripts[chromosome][base_transcript_id]
       previously_first_unused_transcript_id = previously_last_used_transcript_id.multiple
-    end
-    if used_transcript_id == previously_first_unused_transcript_id # i.e. used the transcript at the head.
-      @previously_split_transcripts[base_transcript_id] = used_transcript_id
-      used_transcript_id.multiple
     else
+      previously_first_unused_transcript_id = just_used_transcript_id
+    end
+    if just_used_transcript_id == previously_first_unused_transcript_id # i.e. used the next available transcript id.
+      @previously_split_transcripts[chromosome][base_transcript_id] = just_used_transcript_id
+      just_used_transcript_id.multiple
+    else # i.e. had used an existing transcript id.
       previously_first_unused_transcript_id
     end
   end
@@ -280,7 +281,7 @@ class UserTranscripts
               @transcripts_by_chromosome[chromosome][new_transcript_id] = \
                   {coords: new_transcript_coords, other: working_transcript[:other], base_transcript_id: working_transcript[:base_transcript_id]}
               self.write_gene_id(chromosome, new_transcript_id, split_info[:upstream_gene_ids][index])
-              new_transcript_id = self.advance_transcript_id(working_transcript[:base_transcript_id], new_transcript_id)
+              new_transcript_id = self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
             end
           elsif split_coord > working_transcript[:coords].last.last # hack to correct gene ID
             working_transcript[:gene_id] = split_info[:upstream_gene_ids][index]
@@ -289,7 +290,7 @@ class UserTranscripts
         # Write last transcript. N.B. gene ID already set from parent transcript.
         # TODO: if non-zero?
         @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
-        self.advance_transcript_id(working_transcript[:base_transcript_id], new_transcript_id)
+        self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
       end
     end
     @transcripts_to_split = {}
