@@ -290,7 +290,6 @@ class UserTranscripts
         # Write last transcript. N.B. gene ID already set from parent transcript.
         # TODO: if non-zero?
         @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
-
         self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
       end
     end
