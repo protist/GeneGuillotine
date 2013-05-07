@@ -333,54 +333,6 @@ class UserTranscripts
     end
   end
 
-  # If adjacent transcripts overlap, then truncate them. Unused at the moment.
-  # TODO: probably best to roll this into split!
-  def truncate_overlap (chromosome, transcript_id, trunc_coord, truncate_five_prime)
-    coords = @transcripts_by_chromosome[chromosome][transcript_id][:coords]
-    if !truncate_five_prime
-      coords.reverse! # hence truncate from the beginning of coords
-    end
-    if (truncate_five_prime && trunc_coord < coords.first.first) or \
-        (!truncate_five_prime && trunc_coord > coords.first.last)
-      end
-    found_split = false
-    while !found_split
-      if trunc_coord.between?(coords.first.first, coords.first.last) # in exon
-        found_split = true
-        if truncate_five_prime
-          if trunc_coord == coords.first.last
-            coords.shift
-          else
-            coords[0][0] = trunc_coord + 1
-          end
-        else
-          if trunc_coord == coords.first.first
-            coords.shift
-          else
-            coords[0][1] = trunc_coord - 1
-          end
-        end
-      else
-        # Check next intron. (Error if this follows the last exon, but should never occur.)
-        if truncate_five_prime
-          if trunc_coord.between?((coords.first.last + 1), (coords[1].first - 1))
-            found_split = true
-          end
-        else
-          if trunc_coord.between?((coords[1].last + 1), (coords.first.first - 1))
-            found_split = true
-          end
-        # Not in this exon, so move these coords to transcript.
-          coords.shift
-        end
-      end
-    end
-    if !truncate_five_prime
-      coords.reverse! # back to normal
-    end
-    @transcripts_by_chromosome[chromosome][transcript_id][:coords] = coords
-  end
-
   # Write to a file in the same format as the input gtf.
   #   I won't worry about writing exon number nor gene name for now.
   def write_to_file(output_path)
