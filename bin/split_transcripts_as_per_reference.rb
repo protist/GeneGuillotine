@@ -224,10 +224,19 @@ class UserTranscripts
     end
   end
 
-  # Record split (from phase one, to potentially reuse in phase two)
+  # Record split (from phase one, to potentially reuse in phase two).
   def record_split_coord(chromosome, upstream_gene_id, coord)
     @split_coord_from_phase_one[chromosome] ||= {}
     @split_coord_from_phase_one[chromosome][upstream_gene_id] = coord
+  end
+
+  # Read split (from phase one), otherwise return nil.
+  def read_phase_one_split_coords(chromosome, upstream_gene_id)
+    if @split_coord_from_phase_one[chromosome]
+      @split_coord_from_phase_one[chromosome][upstream_gene_id]
+    else
+      nil
+    end
   end
 
   # Make the splits. Call this after the loop is completed, to prevent problems
@@ -802,18 +811,17 @@ refgff.chromosome_names.each do |chromosome|
             puts 'there is overlap between transcript(s) on genes ' \
                 "#{prev_gene_id} and #{current_gene_id}"
           end
-          # Find potential cut point based on entire intergenic region
-          split_coord = pileup.minimum(chromosome, (refgff.gene_coords(
-              chromosome, prev_gene_id).last + 1), (refgff.gene_coords(
-              chromosome, current_gene_id).first - 1))
-          # If this doesn't lie in the overlap, then find a new split coord.
-          # TODO: Check to see if this split_coord lies within a larger overlap including the intergenic transcript
-          #   N.B. if intergenic transcripts don't overlap this overlap, then ignore.
-          # TODO: split_coord should be central in the intergenic region, not the overlap.
-          if !split_coord.between?(current_gene_transcripts_and_coords.last.first,
-                                   prev_gene_transcripts_and_coords.last.last)
-            split_coord = pileup.minimum(chromosome, current_gene_transcripts_and_coords.last.first,
-                                         prev_gene_transcripts_and_coords.last.last)
+          # Check for a previous split in phase one between these genes.
+          split_coord = transcripts.read_phase_one_split_coords(chromosome, prev_gene_id)
+          # If this was not split on phase one, then find new coordinates
+          if !split_coord
+            # TODO: split_coord should be central in the intergenic region, not the overlap.
+            # N.B. this finds a split coord within the overlap of transcripts
+            #   between neighbouring genes, ignoring potential intergenic
+            #   transcripts, which I consider "noisier".
+            split_coord = pileup.minimum(chromosome, \
+                current_gene_transcripts_and_coords.last.first, \
+                prev_gene_transcripts_and_coords.last.last)
           end
         elsif intergenic_transcripts_and_coords && \
             prev_gene_transcripts_and_coords.last.last >= \
@@ -824,21 +832,19 @@ refgff.chromosome_names.each do |chromosome|
             puts 'the intergenic transcript(s) overlap with transcript(s) on ' \
                 "genes #{prev_gene_id} and #{current_gene_id}"
           end
-          # Find potential cut point based on entire intergenic region
-          split_coord = pileup.minimum(chromosome, (refgff.gene_coords(
-              chromosome, prev_gene_id).last + 1), (refgff.gene_coords(
-              chromosome, current_gene_id).first - 1))
-          # If this doesn't lie in the overlap, then find a new split coord.
+          # Check for a previous split in phase one between these genes.
+          split_coord = transcripts.read_phase_one_split_coords(chromosome, prev_gene_id)
+          # If this was not split on phase one, then find new coordinates
           # The overlap union's coordinates are identical to the intergenic
           # transcripts'. I'm cutting as central as possible within this. There
           # may be an argument for not prioritising this, nor the whole inter-
           # genic region (as above), but it's unclear to me what would be the
           # best place to cut. Perhaps even outside the overlap in this case?
           # TODO: think about the best place to cut, as per this comment block.
-          if !split_coord.between?(intergenic_transcripts_and_coords.last.first,
-                                   intergenic_transcripts_and_coords.last.last)
-            split_coord = pileup.minimum(intergenic_transcripts_and_coords.last.first,
-                                         intergenic_transcripts_and_coords.last.last)
+          if !split_coord
+            split_coord = pileup.minimum(chromosome, \
+                intergenic_transcripts_and_coords.last.first, \
+                intergenic_transcripts_and_coords.last.last)
           end
         end
         if split_coord
@@ -879,6 +885,5 @@ transcripts.split!
 #   If intergenic transcripts overlap in-gene transcripts, just change their id to the relevant gene id?
 
 # print transcripts.overlap_stats
-# p transcripts.transcripts_by_chromosome
 
 transcripts.write_to_file(options[:output_path])
