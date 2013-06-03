@@ -27,6 +27,11 @@
 # Output file:
 #   gtf with gene IDs from reference gff (N.B. DEXSeq does not show position of
 #   transcript, only gene ID).
+#
+# Notes on pileup:
+#   To create a master pileup from several bam files, first merge bam files with
+#   `samtools merge merged.bam 1.bam 2.bam etc.`, then create pileup with
+#   `samtools mpileup merged.bam > merged.pileup`
 
 require 'optparse'
 options = {}
@@ -813,11 +818,10 @@ refgff.chromosome_names.each do |chromosome|
     prev_gene_transcripts_and_coords = current_gene_transcripts_and_coords
     prev_gene_id = current_gene_id
   end
+end
 
-#transcripts.truncate_overlap(chromosome, transcript_id, trunc_coord, truncate_five_prime)
 # TODO: if it's the terminal exon, just truncate, otherwise, split? N.B. different to behaviour of processing in first stage. Maybe don't throw out anything.
 # TODO: perhaps just assign transcript ids at the end? In the meantime, just store in an array for the transcript id? Or just look for unique each time?
-end
 
 transcripts.split!
 
@@ -836,6 +840,9 @@ transcripts.split!
 #   Need to change this to string.between(second_string)
 #   If intergenic transcripts overlap in-gene transcripts, just change their id to the relevant gene id?
 
-# print transcripts.overlap_stats
+puts 'SUMMARY
+=======
+'
+puts transcripts.overlap_stats
 
 transcripts.write_to_file(options[:output_path])
