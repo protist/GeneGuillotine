@@ -569,6 +569,7 @@ class Pileup
     (0..max_coord_delta).each do |coord_delta|
       [start + coord_delta, stop - coord_delta].each do |testing_coord|
         testing_depth = @pileup_by_chromosome[chromosome][testing_coord]
+        testing_depth = 0 if testing_depth.nil?
         if testing_depth <= min_depth
           min_coord = testing_coord
           min_depth = testing_depth
