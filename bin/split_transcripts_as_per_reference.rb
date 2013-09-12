@@ -681,6 +681,7 @@ transcripts.chromosome_names.each do |chromosome|
 end
 
 transcripts.split!
+
 puts "#{Time.new}: statistics for transcripts that overlap multiple reference genes."
 transcripts.overlap_stats.each do |genes, count|
   if genes == :NA
@@ -708,66 +709,64 @@ end
 #   points, unless recalculation is slow.) If the overlap does not contain the
 #   split coordinate, find the minimal pileup position within the overlap.
 
-#if options[:minimal_split]
-puts "#{Time.new}: re-sorting transcripts."
-transcripts.sort!
+if !options[:minimal_split]
+  puts "#{Time.new}: re-sorting transcripts."
+  transcripts.sort!
 
-puts "#{Time.new}: fixing overlapping transcripts on adjacent genes."
-refgff.chromosome_names.each do |chromosome|
-  puts "#{Time.new}:   analysing adjacent overlapping transcripts for #{chromosome}."
-  prev_gene_transcripts_and_coords = nil
-  prev_gene_id = nil
-  refgff.gene_ids(chromosome).each do |current_gene_id|
-    current_gene_transcripts_and_coords = transcripts.
-        transcripts_and_coords_union_for_gene(chromosome, current_gene_id)
-    intergenic_transcripts_and_coords = transcripts.
-        transcripts_and_coords_union_for_gene(chromosome, \
-        [prev_gene_id, current_gene_id])
-    # TODO: if intergenic transcripts don't overlap with each other, they should have unique gene ids assigned.
-    split_coords = nil
-    if prev_gene_id # Not the first iteration.
-      if prev_gene_transcripts_and_coords && \
-          current_gene_transcripts_and_coords
-        # Is there direct overlap between the in-gene transcripts?
-        if prev_gene_transcripts_and_coords.last.last >= \
-          current_gene_transcripts_and_coords.last.first
-          if options[:verbose]
-            puts 'there is overlap between transcript(s) on genes ' \
-                "#{prev_gene_id} and #{current_gene_id}"
+  puts "#{Time.new}: fixing overlapping transcripts on adjacent genes."
+  refgff.chromosome_names.each do |chromosome|
+    puts "#{Time.new}:   analysing adjacent overlapping transcripts for #{chromosome}."
+    prev_gene_transcripts_and_coords = nil
+    prev_gene_id = nil
+    refgff.gene_ids(chromosome).each do |current_gene_id|
+      current_gene_transcripts_and_coords = transcripts.
+          transcripts_and_coords_union_for_gene(chromosome, current_gene_id)
+      intergenic_transcripts_and_coords = transcripts.
+          transcripts_and_coords_union_for_gene(chromosome, \
+          [prev_gene_id, current_gene_id])
+      # TODO: if intergenic transcripts don't overlap with each other, they should have unique gene ids assigned.
+      split_coords = nil
+      if prev_gene_id # Not the first iteration.
+        if prev_gene_transcripts_and_coords && \
+            current_gene_transcripts_and_coords
+          # Is there direct overlap between the in-gene transcripts?
+          if prev_gene_transcripts_and_coords.last.last >= \
+            current_gene_transcripts_and_coords.last.first
+            if options[:verbose]
+              puts 'there is overlap between transcript(s) on genes ' \
+                  "#{prev_gene_id} and #{current_gene_id}"
+            end
+            split_coords = [(refgff.gene_coords(chromosome, prev_gene_id).last + 1),
+                (refgff.gene_coords(chromosome, current_gene_id).first - 1)]
+          elsif intergenic_transcripts_and_coords && \
+              prev_gene_transcripts_and_coords.last.last >= \
+              intergenic_transcripts_and_coords.last.first && \
+              intergenic_transcripts_and_coords.last.last >= \
+              current_gene_transcripts_and_coords.last.first # intergenic overlaps both
+            if options[:verbose]
+              puts 'the intergenic transcript(s) overlap with transcript(s) on ' \
+                  "genes #{prev_gene_id} and #{current_gene_id}"
+            end
+            split_coords = [(refgff.gene_coords(chromosome, prev_gene_id).last + 1),
+                (refgff.gene_coords(chromosome, current_gene_id).first - 1)]
           end
-          split_coords = [(refgff.gene_coords(chromosome, prev_gene_id).last + 1),
-              (refgff.gene_coords(chromosome, current_gene_id).first - 1)]
-        elsif intergenic_transcripts_and_coords && \
-            prev_gene_transcripts_and_coords.last.last >= \
-            intergenic_transcripts_and_coords.last.first && \
-            intergenic_transcripts_and_coords.last.last >= \
-            current_gene_transcripts_and_coords.last.first # intergenic overlaps both
-          if options[:verbose]
-            puts 'the intergenic transcript(s) overlap with transcript(s) on ' \
-                "genes #{prev_gene_id} and #{current_gene_id}"
-          end
-          split_coords = [(refgff.gene_coords(chromosome, prev_gene_id).last + 1),
-              (refgff.gene_coords(chromosome, current_gene_id).first - 1)]
-        end
-        if split_coords
-          # Cut prev_gene and current_gene transcripts, but not intergenic.
-          (prev_gene_transcripts_and_coords.first.keys + \
-              current_gene_transcripts_and_coords.first.keys).each do |transcript_id|
-            transcripts.define_split(chromosome, transcript_id, split_coords, prev_gene_id)
-            transcripts.write_gene_id(chromosome, transcript_id, current_gene_id)
+          if split_coords
+            # Cut prev_gene and current_gene transcripts, but not intergenic.
+            (prev_gene_transcripts_and_coords.first.keys + \
+                current_gene_transcripts_and_coords.first.keys).each do |transcript_id|
+              transcripts.define_split(chromosome, transcript_id, split_coords, prev_gene_id)
+              transcripts.write_gene_id(chromosome, transcript_id, current_gene_id)
+            end
           end
         end
       end
+      prev_gene_transcripts_and_coords = current_gene_transcripts_and_coords
+      prev_gene_id = current_gene_id
     end
-    prev_gene_transcripts_and_coords = current_gene_transcripts_and_coords
-    prev_gene_id = current_gene_id
   end
+
+  transcripts.split!
 end
-
-# TODO: if it's the terminal exon, just truncate, otherwise, split? N.B. different to behaviour of processing in first stage. Maybe don't throw out anything.
-
-transcripts.split!
-
 ################################################################################
 ### Make gene name unique if transcripts do not overlap
 # DEXSeq trusts geneIDs. Hence, it combines two genes if they have the same
