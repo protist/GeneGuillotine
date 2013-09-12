@@ -330,6 +330,20 @@ class UserTranscripts
     @transcripts_to_split = {}
   end
 
+  # Return transcript ids that have a given gene id as an array. If no
+  #   transcripts for that gene (or chromosome), return empty array.
+  #
+  def transcripts_for_gene(chromosome, gene_id)
+    if @transcripts_by_chromosome[chromosome]
+      transcripts_for_this_gene = @transcripts_by_chromosome[chromosome].select do |_, transcript|
+        transcript[:gene_id] == gene_id
+      end
+      transcripts_for_this_gene
+    else
+      []
+    end
+  end
+
   # Return transcript ids that have a given gene id. If no transcripts for that
   #   gene (or chromosome), return nil. Also return the minimum and maximum
   #   coordinates for these transcripts. Return as [array of transcripts,
@@ -676,6 +690,35 @@ transcripts.chromosome_names.each do |chromosome|
         upstream_gene_id = refgff.gene_id(chromosome, position_of_upstream_gene)
         transcripts.define_split(chromosome, transcript_id, split_coords, upstream_gene_id)
       end
+    end
+  end
+end
+
+# For intergenic regions that will be excised because of the presence of
+#   transcripts covering multiple genes, also remove intergenic transcripts and
+#   extensions from other transcripts into this region.
+# Don't integrate this identification into split!, because you wouldn't
+#   necessarily excise all transcripts in this intergenic region in phase 2's
+#   split! (e.g. when an intergenic transcript overlaps with only one adjacent
+#   gene's UTR).
+require 'set'
+upstream_genes_to_split = {}
+transcripts.transcripts_to_split.each do |chromosome, transcripts_to_split_by_chromosome|
+  upstream_genes_to_split[chromosome] = Set.new
+  transcripts_to_split_by_chromosome.each do |_, split_info|
+    split_info[:upstream_gene_ids].each do |upstream_gene_id|
+      upstream_genes_to_split[chromosome].add upstream_gene_id
+    end
+  end
+end
+
+# Add all transcripts from upstream, intergenic and downstream, if it's not
+#   already listed.
+upstream_genes_to_split.each do |chromosome, upstream_genes_to_split_by_chromosome|
+  upstream_genes_to_split_by_chromosome.each do |upstream_gene_id|
+    transcripts.transcripts_for_gene(chromosome, upstream_gene_id).each do |transcript_to_add|
+# TODO: move split_coords into split!, so you don't have to manually find it every time you define_split.
+#     transcripts.define_split(chromosome, transcript_to_add, split_coords, upstream_gene_id) unless transcripts.transcripts_to_split[chromosome].has_key? transcript_to_add
     end
   end
 end
