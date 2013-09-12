@@ -16,22 +16,14 @@
 #   useful if a downstream program (e.g. DEXSeq) requires each gene to be
 #   separate and not overlapping with its neighbours.
 #
-# The position of the split is decided by priority:
-#   1) If there is an existing split in any transcript isoform within the gtf,
-#        then use that.
-#   2) Otherwise, use the local minimum for depth of coverage (from a pileup
-#        file created by samtools mpileup).
-#   2b) If there are multiple minima, then use the one closest to the middle of
-#         the gap.
+# The position of the split is determined by the genes in the reference gff. The
+#   default is to constrain each transcript to the limits of the CDS.
+#
+# Transcripts that lie wholly within intergenic regions will be kept.
 #
 # Output file:
 #   gtf with gene IDs from reference gff (N.B. DEXSeq does not show position of
 #   transcript, only gene ID).
-#
-# Notes on pileup:
-#   To create a master pileup from several bam files, first merge bam files with
-#   `samtools merge merged.bam 1.bam 2.bam etc.`, then create pileup with
-#   `samtools mpileup merged.bam > merged.pileup`
 
 require 'optparse'
 options = {}
@@ -48,30 +40,39 @@ OptionParser.new do |opts|
     options[:verbose] = v
   end
   opts.on('-i', '--input GTF_FILE',
-          'Primary GTF_FILE (e.g. from Cuffmerge) is required.') do |i|
+        'Primary GTF_FILE (e.g. from Cuffmerge) is required.') do |i|
     options[:mygtf_path] = i
   end
   opts.on('-g', '--ref_gff GFF_FILE',
-          'Reference GFF_FILE (e.g. from eupathdb) is required.') do |g|
+        'Reference GFF_FILE (e.g. from eupathdb) is required.') do |g|
     options[:refgff_path] = g
   end
-  opts.on('-p', '--pileup PILEUP_FILE',
-          'PILEUP_FILE (from samtools mpileup) is required.') do |p|
-    options[:pileup_path] = p
-  end
   opts.on('-o', '--output OUTPUT_FILE',
-          'OUTPUT_FILE is required.') do |o|
+        'OUTPUT_FILE is required.') do |o|
     options[:output_path] = o
+  end
+  opts.on('-m', '--minimal_split', 'Only split transcripts that overlap ' \
+      'multiple genes. Do not split when multiple adjacent transcripts ' \
+      'overlap') do |m|
+    options[:minimal_split] = m
   end
 end.parse!
 
 # Mandatory "options"
 raise OptionParser::MissingArgument if options[:mygtf_path].nil? ||
     options[:refgff_path].nil? ||
-    options[:pileup_path].nil? ||
     options[:output_path].nil?
 
-# Ruby 1.9.2 is required for ordered hash. Otherwise, I could hash.sort every time. But I won't.
+# TODO: allow option to allow an absolute extension on either side of the CDS
+#   (e.g. 500 bp), while preventing adjacent defined UTRs from being too
+#   close, perhaps by defining maximum UTR length? I'm not sure how useful this
+#   would be in terms of power, it's slightly complicated to code (including
+#   implementing all the options), and might result in more false positives.
+# TODO: Allow option to only split from phase 1, i.e. transcripts that lie over
+#   multiple genes. Adjacent transcripts that overlap might be useful for some
+#   downstream analyses.
+
+# Require Ruby 1.9.2 for ordered hash. This is quicker than continual hash.sort.
 min_release = '1.9.2'
 ruby_release = RUBY_VERSION
 if ruby_release < min_release
@@ -124,7 +125,6 @@ class UserTranscripts
                                    # both intergenic and terminal.
     @transcripts_to_split = {}
     @previously_split_transcripts = {} # {:parent_transcript_id => :transcript_id:last#}
-    @split_coord_from_phase_one = {}
   end
 
   # Create a new chromosome and gene id if necessary, and replace start and stop
@@ -151,8 +151,8 @@ class UserTranscripts
 
   attr_reader(:transcripts_by_chromosome, :transcripts_to_split, :previously_split_transcripts) # for debugging
 
-  # For each chromosome, sort genes by start coordinates.
-  # TODO: sort coordinates?
+  # For each chromosome, sort transcripts by start coordinates.
+  # TODO: sort coordinates within transcripts?
   def sort!
     @transcripts_by_chromosome.each do |chromosome, transcripts_for_this_chromosome|
       sorted_chromosome = Hash[transcripts_for_this_chromosome.sort_by { |_, value| value[:coords].first.first }]
@@ -202,8 +202,9 @@ class UserTranscripts
     @transcripts_by_chromosome[chromosome][transcript_id][:gene_id] = gene_id
   end
 
-  # Add to list of transcripts to split later. Each member of :upstream_gene_id
-  #   corresponds with a member of :coord.
+  # Add to list of transcripts to split later. Each member of :upstream_gene_ids
+  #   corresponds with a member of :coords. Each member of :coords is a
+  #   two-member array of the intergenic region to excise.
   def define_split(chromosome, transcript_id, split_coord, upstream_gene_id)
     @transcripts_to_split[chromosome] ||= {}
     @transcripts_to_split[chromosome][transcript_id] ||= {coords:[], upstream_gene_ids:[]}
@@ -229,30 +230,9 @@ class UserTranscripts
     end
   end
 
-  # Record split (from phase one, to potentially reuse in phase two).
-  def record_split_coord(chromosome, upstream_gene_id, coord)
-    @split_coord_from_phase_one[chromosome] ||= {}
-    @split_coord_from_phase_one[chromosome][upstream_gene_id] = coord
-  end
-
-  # Read split (from phase one), otherwise return nil.
-  def read_phase_one_split_coords(chromosome, upstream_gene_id)
-    if @split_coord_from_phase_one[chromosome]
-      @split_coord_from_phase_one[chromosome][upstream_gene_id]
-    else
-      nil
-    end
-  end
-
   # Make the splits. Call this after the loop is completed, to prevent problems
   #   with changing order of hash, and having to unnecessarily read new
   #   positions from the end.
-  # TODO: don't split if directly adjacent to CDS. Read in option to specify
-  #   minimum distance to CDS, either as percent of the intron, or an absolute
-  #   value.
-  # If split_coord lies outside transcript, do nothing.
-  # TODO: if you keep splitting a transcript until there is nothing left, then
-  #   there will be an error. But this is surely implausible?
   def split!
     @transcripts_to_split.each do |chromosome, transcripts_to_split_by_chromosome|
       transcripts_to_split_by_chromosome.each do |parent_transcript_id, split_info|
@@ -261,50 +241,90 @@ class UserTranscripts
           working_transcript[:base_transcript_id] = parent_transcript_id
         end
         new_transcript_id = parent_transcript_id
-        split_info[:coords].each_with_index do |split_coord, index|
-          if split_coord.between?(working_transcript[:coords].first.first, \
-              working_transcript[:coords].last.last) # split within transcript
-            found_split = false
-            new_transcript_coords = []
-            while !found_split
-              if split_coord.between?(working_transcript[:coords].first.first, \
-                  working_transcript[:coords].first.last) # in exon
-                found_split = true
-                # Add this exon if its length is non-zero.
-                if !(split_coord == working_transcript[:coords].first.first)
-                  new_transcript_coords.push([working_transcript[:coords].first.first, (split_coord - 1)])
+        more_to_analyse = true
+        split_info[:coords].each_with_index do |split_coords, index|
+          if more_to_analyse
+            # If transcript is totally upstream of split_coords, don't split,
+            #   fix gene_id, and stop more "splitting" and writing of gene_id.
+            if working_transcript[:coords].last.last < split_coords.first
+              working_transcript[:gene_id] = split_info[:upstream_gene_ids][index]
+              more_to_analyse = false
+            else
+
+              # Firstly, see if upstream split position is in transcript.
+              #   Then, split and create new transcript.
+              if split_coords.first.between? \
+                  (working_transcript[:coords].first.first + 1), \
+                  working_transcript[:coords].last.last
+                new_transcript_coords = []
+                found_split = false
+                while !found_split
+                  if split_coords.first < working_transcript[:coords].first.first # upstream of exon
+                    found_split = true
+                  elsif split_coords.first.between? \
+                      working_transcript[:coords].first.first, \
+                      working_transcript[:coords].first.last # in exon
+                    found_split = true
+                    # Add this exon if its length is non-zero.
+                    if !(split_coords.first == working_transcript[:coords].first.first)
+                      new_transcript_coords.push([working_transcript[:coords].first.
+                          first, (split_coords.first - 1)])
+                    end
+                  else # in next intron or further downstream
+                    # Check next intron. (Error following the last exon, but won't occur.)
+                    if split_coords.first.between? \
+                        (working_transcript[:coords].first.last + 1), \
+                        (working_transcript[:coords][1].first - 1)
+                      found_split = true
+                    end
+                    # Not in this exon, so move these coords to transcript.
+                    new_transcript_coords.push(working_transcript[:coords].shift)
+                  end
                 end
-                # How much of the working transcript do we retain?
-                if split_coord == working_transcript[:coords].first.last
-                  working_transcript[:coords].shift
-                else
-                  working_transcript[:coords][0][0] = split_coord + 1
+                # Write this just-split transcript if non-zero.
+                if !(new_transcript_coords == [])
+                  @transcripts_by_chromosome[chromosome][new_transcript_id] = \
+                      {coords: new_transcript_coords, other: working_transcript[:other], base_transcript_id: working_transcript[:base_transcript_id]}
+                  self.write_gene_id(chromosome, new_transcript_id, split_info[:upstream_gene_ids][index])
+                  new_transcript_id = self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
                 end
-              else
-                # Check next intron. (Error following the last exon, but won't occur.)
-                if split_coord.between?((working_transcript[:coords].first.last + 1), \
-                    (working_transcript[:coords][1].first - 1))
-                  found_split = true
+              end
+
+              # Secondly, see if downstream split position is in transcript.
+              #   Then, trim this (possibly just-created) transcript.
+              if working_transcript[:coords].last.last <= split_coords.last
+                more_to_analyse = false
+                working_transcript[:coords] = []
+              elsif split_coords.last.between?(working_transcript[:coords].first.first, \
+                  (working_transcript[:coords].last.last - 1))
+                found_split = false
+                while !found_split
+                  if split_coords.last < working_transcript[:coords].first.first # upstream of exon
+                    found_split = true
+                  elsif split_coords.last.between?(working_transcript[:coords].first.first, \
+                      working_transcript[:coords].first.last) # in exon
+                    found_split = true
+                    # Either remove exon or trim it if necessary.
+                    if split_coords.last == working_transcript[:coords].first.last
+                      working_transcript[:coords].shift
+                    else
+                      working_transcript[:coords][0][0] = split_coords.last + 1
+                    end
+                  else # In next intron or further downstream. Remove exon.
+                    working_transcript[:coords].shift
+                  end
                 end
-                # Not in this exon, so move these coords to transcript.
-                new_transcript_coords.push(working_transcript[:coords].shift)
               end
             end
-            # Write this just-split transcript if non-zero.
-            if !(new_transcript_coords == [])
-              @transcripts_by_chromosome[chromosome][new_transcript_id] = \
-                  {coords: new_transcript_coords, other: working_transcript[:other], base_transcript_id: working_transcript[:base_transcript_id]}
-              self.write_gene_id(chromosome, new_transcript_id, split_info[:upstream_gene_ids][index])
-              new_transcript_id = self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
+
+            # Write last working transcript if non-zero.
+            #   gene_id will have been set from parent transcript.
+            if !(working_transcript[:coords] == [])
+              @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
+              self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
             end
-          elsif split_coord > working_transcript[:coords].last.last # hack to correct gene ID
-            working_transcript[:gene_id] = split_info[:upstream_gene_ids][index]
           end
         end
-        # Write last transcript. N.B. gene ID already set from parent transcript.
-        # TODO: if non-zero?
-        @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
-        self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
       end
     end
     @transcripts_to_split = {}
@@ -529,61 +549,6 @@ puts "#{Time.new}: checking reference gff file for overlapping genes."
 refgff.check_overlaps
 
 ################################################################################
-### Read pileup file (from samtools mpileup)
-# Define pileup class
-class Pileup
-  # A Pileup object stores relevant information from a pileup file, specifically
-  #   chromosome, coordinates, and number of reads per coordinate.
-
-  # A pileup file (from samtools mpileup)is tab-delimited, containing
-  #   chromosome name, coordinate, reference base, the number of reads covering
-  #   the site, read bases, and base qualities
-  #   e.g. TGGT1_chrII  1  N  8 ^$C^$C^$C^$C^$C^$C^$C^$C  @@CC+@C@
-  #   This is ordered by chromosome, then by coordinates. N.B. There are no
-  #   entries for zero depth, but transcripts shouldn't contain these anyway.
-  # The @pileup_by_chromosome has format as follows
-  #   {:chromosome => {coordinate => depth, coordinate => depth, ...}}
-  def initialize(pileup_path)
-    @pileup_by_chromosome = {}
-    File.open(pileup_path).each do |line|
-      splitline = line.split "\t"
-      input_chromosome = splitline[0].to_sym
-      input_coordinate = splitline[1].to_i
-      input_depth = splitline[3].to_i
-      # Create new chromosome hash if it doesn't exist.
-      @pileup_by_chromosome[input_chromosome] ||= {}
-      # Add the coordinate and depth from this line of the pileup file.
-      @pileup_by_chromosome[input_chromosome][input_coordinate] = input_depth
-    end
-  end
-
-  # Find most-central minimum, given chromosome and coordinate range.
-  # TODO: don't specify position directly adjacent to CDS. Add option to specify
-  #   minimum distance to CDS, either as percent of the intron, or an absolute
-  #   value.
-  def minimum(chromosome, start, stop)
-    max_coord_delta = ((stop - start)/2).to_i
-    min_coord = nil
-    min_depth = Float::INFINITY
-    # Test from both extremities, moving towards the centre.
-    (0..max_coord_delta).each do |coord_delta|
-      [start + coord_delta, stop - coord_delta].each do |testing_coord|
-        testing_depth = @pileup_by_chromosome[chromosome][testing_coord]
-        testing_depth = 0 if testing_depth.nil?
-        if testing_depth <= min_depth
-          min_coord = testing_coord
-          min_depth = testing_depth
-        end
-      end
-    end
-    min_coord
-  end
-end
-
-# Create pileup object
-pileup = Pileup.new(options[:pileup_path])
-
-################################################################################
 ### Find transcripts that overlap two genes; assign gene IDs to all.
 # Split transcripts when they overlap two genes.
 # There doesn't seem to be a way to change a key while retaining order.
@@ -705,11 +670,11 @@ transcripts.chromosome_names.each do |chromosome|
           gene_id(chromosome, position_of_last_overlapping_gene)) # Temporarily store this gene id for the entire transcript (easier when naming fragments later).
       (position_of_first_overlapping_gene..(position_of_last_overlapping_gene - 1)).
           each do |position_of_upstream_gene|
-        split_coord = pileup.minimum(chromosome, (refgff.gene_coords_by_position(chromosome, position_of_upstream_gene).
-            last + 1), (refgff.gene_coords_by_position(chromosome, position_of_upstream_gene + 1).first - 1))
+        split_coords = [(refgff.gene_coords_by_position(chromosome,
+            position_of_upstream_gene).last + 1), (refgff.gene_coords_by_position(
+            chromosome, position_of_upstream_gene + 1).first - 1)]
         upstream_gene_id = refgff.gene_id(chromosome, position_of_upstream_gene)
-        transcripts.define_split(chromosome, transcript_id, split_coord, upstream_gene_id)
-        transcripts.record_split_coord(chromosome, upstream_gene_id, split_coord)
+        transcripts.define_split(chromosome, transcript_id, split_coords, upstream_gene_id)
       end
     end
   end
@@ -743,6 +708,7 @@ end
 #   points, unless recalculation is slow.) If the overlap does not contain the
 #   split coordinate, find the minimal pileup position within the overlap.
 
+#if options[:minimal_split]
 puts "#{Time.new}: re-sorting transcripts."
 transcripts.sort!
 
@@ -757,30 +723,20 @@ refgff.chromosome_names.each do |chromosome|
     intergenic_transcripts_and_coords = transcripts.
         transcripts_and_coords_union_for_gene(chromosome, \
         [prev_gene_id, current_gene_id])
-    # TODO: what if intergenic transcripts do not overlap with each other? (They should have been assigned unique gene ids.)
-    split_coord = nil
+    # TODO: if intergenic transcripts don't overlap with each other, they should have unique gene ids assigned.
+    split_coords = nil
     if prev_gene_id # Not the first iteration.
       if prev_gene_transcripts_and_coords && \
           current_gene_transcripts_and_coords
-        # Is there overlap between the in-gene transcripts?
+        # Is there direct overlap between the in-gene transcripts?
         if prev_gene_transcripts_and_coords.last.last >= \
           current_gene_transcripts_and_coords.last.first
           if options[:verbose]
             puts 'there is overlap between transcript(s) on genes ' \
                 "#{prev_gene_id} and #{current_gene_id}"
           end
-          # Check for a previous split in phase one between these genes.
-          split_coord = transcripts.read_phase_one_split_coords(chromosome, prev_gene_id)
-          # If this was not split on phase one, then find new coordinates
-          if !split_coord
-            # TODO: split_coord should be central in the intergenic region, not the overlap.
-            # N.B. this finds a split coord within the overlap of transcripts
-            #   between neighbouring genes, ignoring potential intergenic
-            #   transcripts, which I consider "noisier".
-            split_coord = pileup.minimum(chromosome, \
-                current_gene_transcripts_and_coords.last.first, \
-                prev_gene_transcripts_and_coords.last.last)
-          end
+          split_coords = [(refgff.gene_coords(chromosome, prev_gene_id).last + 1),
+              (refgff.gene_coords(chromosome, current_gene_id).first - 1)]
         elsif intergenic_transcripts_and_coords && \
             prev_gene_transcripts_and_coords.last.last >= \
             intergenic_transcripts_and_coords.last.first && \
@@ -790,27 +746,14 @@ refgff.chromosome_names.each do |chromosome|
             puts 'the intergenic transcript(s) overlap with transcript(s) on ' \
                 "genes #{prev_gene_id} and #{current_gene_id}"
           end
-          # Check for a previous split in phase one between these genes.
-          split_coord = transcripts.read_phase_one_split_coords(chromosome, prev_gene_id)
-          # If this was not split on phase one, then find new coordinates
-          # The overlap union's coordinates are identical to the intergenic
-          # transcripts'. I'm cutting as central as possible within this. There
-          # may be an argument for not prioritising this, nor the whole inter-
-          # genic region (as above), but it's unclear to me what would be the
-          # best place to cut. Perhaps even outside the overlap in this case?
-          # TODO: think about the best place to cut, as per this comment block.
-          if !split_coord
-            split_coord = pileup.minimum(chromosome, \
-                intergenic_transcripts_and_coords.last.first, \
-                intergenic_transcripts_and_coords.last.last)
-          end
+          split_coords = [(refgff.gene_coords(chromosome, prev_gene_id).last + 1),
+              (refgff.gene_coords(chromosome, current_gene_id).first - 1)]
         end
-        if split_coord
-          # Cut prev_gene, intergenic, and current_gene transcripts.
+        if split_coords
+          # Cut prev_gene and current_gene transcripts, but not intergenic.
           (prev_gene_transcripts_and_coords.first.keys + \
-              intergenic_transcripts_and_coords.first.keys + \
               current_gene_transcripts_and_coords.first.keys).each do |transcript_id|
-            transcripts.define_split(chromosome, transcript_id, split_coord, prev_gene_id)
+            transcripts.define_split(chromosome, transcript_id, split_coords, prev_gene_id)
             transcripts.write_gene_id(chromosome, transcript_id, current_gene_id)
           end
         end
@@ -822,7 +765,6 @@ refgff.chromosome_names.each do |chromosome|
 end
 
 # TODO: if it's the terminal exon, just truncate, otherwise, split? N.B. different to behaviour of processing in first stage. Maybe don't throw out anything.
-# TODO: perhaps just assign transcript ids at the end? In the meantime, just store in an array for the transcript id? Or just look for unique each time?
 
 transcripts.split!
 
@@ -831,11 +773,9 @@ transcripts.split!
 # DEXSeq trusts geneIDs. Hence, it combines two genes if they have the same
 #   geneID, regardless of where they are located.
 
-# TODO: if multiple, overlapping transcripts on a single gene -> they should share a gene ID. We are trusting the refgff gene limits. Or should we totally trust the ref?
-#   OTOH, if there are multiple non-overlapping transcripts on a single gene, we should break them up into -a, -b, etc.
-#   similarly for intergenic transcripts.
+# TODO: if there are multiple non-overlapping transcripts on a single gene, we
+#   should break them up into -a, -b, etc. Similarly for intergenic transcripts.
 
-#
 # TODO: intergenic transcripts need to have their gene name numbered: e.g. :a, :b
 # TODO: currently, intergenic transcripts have gene id as [:prev, :next].
 #   Need to change this to string.between(second_string)
