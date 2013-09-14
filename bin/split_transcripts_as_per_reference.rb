@@ -202,14 +202,14 @@ class UserTranscripts
     @transcripts_by_chromosome[chromosome][transcript_id][:gene_id] = gene_id
   end
 
-  # Add to list of transcripts to split later. Each member of :upstream_gene_ids
-  #   corresponds with a member of :coords. Each member of :coords is a
-  #   two-member array of the intergenic region to excise.
+  # Add to list of transcripts to split later.
+  #   @transcripts_to_split[chromosome][transcript_id] is an array containing
+  #   [{coords:[a,b], upstream_gene_ids:[id_a]}, {…}, …]
   def define_split(chromosome, transcript_id, split_coord, upstream_gene_id)
     @transcripts_to_split[chromosome] ||= {}
-    @transcripts_to_split[chromosome][transcript_id] ||= {coords:[], upstream_gene_ids:[]}
-    @transcripts_to_split[chromosome][transcript_id][:coords].push(split_coord)
-    @transcripts_to_split[chromosome][transcript_id][:upstream_gene_ids].push(upstream_gene_id)
+    @transcripts_to_split[chromosome][transcript_id] ||= []
+    @transcripts_to_split[chromosome][transcript_id].push \
+        ({coords: split_coord, upstream_gene_id: upstream_gene_id})
   end
 
   # Find next transcript_id to use when splitting transcripts, and record
@@ -235,44 +235,44 @@ class UserTranscripts
   #   positions from the end.
   def split!
     @transcripts_to_split.each do |chromosome, transcripts_to_split_by_chromosome|
-      transcripts_to_split_by_chromosome.each do |parent_transcript_id, split_info|
+      transcripts_to_split_by_chromosome.each do |parent_transcript_id, split_events|
         working_transcript = @transcripts_by_chromosome[chromosome].delete(parent_transcript_id)
         if !working_transcript[:base_transcript_id]
           working_transcript[:base_transcript_id] = parent_transcript_id
         end
         new_transcript_id = parent_transcript_id
         more_to_analyse = true
-        split_info[:coords].each_with_index do |split_coords, index|
+        split_events.each do |split_event|
           if more_to_analyse
-            # If transcript is totally upstream of split_coords, don't split,
+            # If transcript is totally upstream of split coords, don't split,
             #   fix gene_id, and stop more "splitting" and writing of gene_id.
-            if working_transcript[:coords].last.last < split_coords.first
-              working_transcript[:gene_id] = split_info[:upstream_gene_ids][index]
+            if working_transcript[:coords].last.last < split_event[:coords].first
+              working_transcript[:gene_id] = split_event[:upstream_gene_id]
               more_to_analyse = false
             else
 
               # Firstly, see if upstream split position is in transcript.
               #   Then, split and create new transcript.
-              if split_coords.first.between? \
+              if split_event[:coords].first.between? \
                   (working_transcript[:coords].first.first + 1), \
                   working_transcript[:coords].last.last
                 new_transcript_coords = []
                 found_split = false
                 while !found_split
-                  if split_coords.first < working_transcript[:coords].first.first # upstream of exon
+                  if split_event[:coords].first < working_transcript[:coords].first.first # upstream of exon
                     found_split = true
-                  elsif split_coords.first.between? \
+                  elsif split_event[:coords].first.between? \
                       working_transcript[:coords].first.first, \
                       working_transcript[:coords].first.last # in exon
                     found_split = true
                     # Add this exon if its length is non-zero.
-                    if !(split_coords.first == working_transcript[:coords].first.first)
+                    if !(split_event[:coords].first == working_transcript[:coords].first.first)
                       new_transcript_coords.push([working_transcript[:coords].first.
-                          first, (split_coords.first - 1)])
+                          first, (split_event[:coords].first - 1)])
                     end
                   else # in next intron or further downstream
                     # Check next intron. (Error following the last exon, but won't occur.)
-                    if split_coords.first.between? \
+                    if split_event[:coords].first.between? \
                         (working_transcript[:coords].first.last + 1), \
                         (working_transcript[:coords][1].first - 1)
                       found_split = true
@@ -285,30 +285,30 @@ class UserTranscripts
                 if !(new_transcript_coords == [])
                   @transcripts_by_chromosome[chromosome][new_transcript_id] = \
                       {coords: new_transcript_coords, other: working_transcript[:other], base_transcript_id: working_transcript[:base_transcript_id]}
-                  self.write_gene_id(chromosome, new_transcript_id, split_info[:upstream_gene_ids][index])
+                  self.write_gene_id(chromosome, new_transcript_id, split_event[:upstream_gene_id])
                   new_transcript_id = self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
                 end
               end
 
               # Secondly, see if downstream split position is in transcript.
               #   Then, trim this (possibly just-created) transcript.
-              if working_transcript[:coords].last.last <= split_coords.last
+              if working_transcript[:coords].last.last <= split_event[:coords].last
                 more_to_analyse = false
                 working_transcript[:coords] = []
-              elsif split_coords.last.between?(working_transcript[:coords].first.first, \
+              elsif split_event[:coords].last.between?(working_transcript[:coords].first.first, \
                   (working_transcript[:coords].last.last - 1))
                 found_split = false
                 while !found_split
-                  if split_coords.last < working_transcript[:coords].first.first # upstream of exon
+                  if split_event[:coords].last < working_transcript[:coords].first.first # upstream of exon
                     found_split = true
-                  elsif split_coords.last.between?(working_transcript[:coords].first.first, \
+                  elsif split_event[:coords].last.between?(working_transcript[:coords].first.first, \
                       working_transcript[:coords].first.last) # in exon
                     found_split = true
                     # Either remove exon or trim it if necessary.
-                    if split_coords.last == working_transcript[:coords].first.last
+                    if split_event[:coords].last == working_transcript[:coords].first.last
                       working_transcript[:coords].shift
                     else
-                      working_transcript[:coords][0][0] = split_coords.last + 1
+                      working_transcript[:coords][0][0] = split_event[:coords].last + 1
                     end
                   else # In next intron or further downstream. Remove exon.
                     working_transcript[:coords].shift
@@ -526,7 +526,6 @@ class ReferenceGFF
   # Return an array of the start and end coordinates of the gene, given
   # chromosome and position in the ordered hash.
   def gene_coords_by_position(chromosome, position)
-    # TODO: is it more efficient to store values and keys semi-permanently in separate arrays?
     @genes_by_chromosome[chromosome].values[position]
   end
 
@@ -705,23 +704,33 @@ require 'set'
 upstream_genes_to_split = {}
 transcripts.transcripts_to_split.each do |chromosome, transcripts_to_split_by_chromosome|
   upstream_genes_to_split[chromosome] = Set.new
-  transcripts_to_split_by_chromosome.each do |_, split_info|
-    split_info[:upstream_gene_ids].each do |upstream_gene_id|
-      upstream_genes_to_split[chromosome].add upstream_gene_id
+  transcripts_to_split_by_chromosome.each do |split_events|
+    split_events.each do |split_event|
+      upstream_genes_to_split[chromosome].add split_event
     end
   end
 end
 
+=begin
 # Add all transcripts from upstream, intergenic and downstream, if it's not
 #   already listed.
 upstream_genes_to_split.each do |chromosome, upstream_genes_to_split_by_chromosome|
-  upstream_genes_to_split_by_chromosome.each do |upstream_gene_id|
-    transcripts.transcripts_for_gene(chromosome, upstream_gene_id).each do |transcript_to_add|
-# TODO: move split_coords into split!, so you don't have to manually find it every time you define_split.
-#     transcripts.define_split(chromosome, transcript_to_add, split_coords, upstream_gene_id) unless transcripts.transcripts_to_split[chromosome].has_key? transcript_to_add
+  upstream_genes_to_split_by_chromosome.each do |split_events|
+    split_events.each do |split_event|
+      transcripts.transcripts_for_gene(chromosome, split_event\
+          [:upstream_gene_id]).each do |transcript_candidate|
+        unless transcripts.transcripts_to_split[chromosome].has_key?\
+            (transcript_candidate)
+          transcripts.define_split(chromosome, transcript_candidate, \
+              split_event[:coords], split_event[:upstream_gene_id])
+        end
+      end
     end
   end
 end
+# Make (possibly large) object available for garbage collection.
+upstream_genes_to_split = nil
+=end
 
 transcripts.split!
 
