@@ -204,12 +204,15 @@ class UserTranscripts
 
   # Add to list of transcripts to split later.
   #   @transcripts_to_split[chromosome][transcript_id] is an array containing
-  #   [{coords:[a,b], upstream_gene_ids:[id_a]}, {…}, …]
-  def define_split(chromosome, transcript_id, split_coord, upstream_gene_id)
+  #   [{coords:[a,b], upstream_gene_ids:[id_a], downstream_gene_id:[id_b]}, {…}]
+  #   downstream_gene_id is only used for the first part of phase one.
+  def define_split(chromosome, transcript_id, split_coords, upstream_gene_id, \
+      downstream_gene_id)
     @transcripts_to_split[chromosome] ||= {}
     @transcripts_to_split[chromosome][transcript_id] ||= []
-    @transcripts_to_split[chromosome][transcript_id].push \
-        ({coords: split_coord, upstream_gene_id: upstream_gene_id})
+    @transcripts_to_split[chromosome][transcript_id].push\
+        ({coords: split_coords, upstream_gene_id: upstream_gene_id, \
+        downstream_gene_id: downstream_gene_id})
   end
 
   # Find next transcript_id to use when splitting transcripts, and record
@@ -330,21 +333,21 @@ class UserTranscripts
     @transcripts_to_split = {}
   end
 
-  # Return transcript ids that have a given gene id as an array. If no
-  #   transcripts for that gene (or chromosome), return empty array.
-  #
-  def transcripts_for_gene(chromosome, gene_id)
+  # Return transcripts that have a given gene id as an array. If no transcripts
+  #   for that gene (or chromosome), return empty array.
+  def transcript_ids_for_gene(chromosome, gene_id)
     if @transcripts_by_chromosome[chromosome]
-      transcripts_for_this_gene = @transcripts_by_chromosome[chromosome].select do |_, transcript|
+      @transcripts_by_chromosome[chromosome].select do |_, transcript|
         transcript[:gene_id] == gene_id
+      end.collect do |transcript_id, _|
+        transcript_id
       end
-      transcripts_for_this_gene
     else
       []
     end
   end
 
-  # Return transcript ids that have a given gene id. If no transcripts for that
+  # Return transcripts that have a given gene id. If no transcripts for that
   #   gene (or chromosome), return nil. Also return the minimum and maximum
   #   coordinates for these transcripts. Return as [array of transcripts,
   #   [min/max coords]]
@@ -687,7 +690,9 @@ transcripts.chromosome_names.each do |chromosome|
             position_of_upstream_gene).last + 1), (refgff.gene_coords_by_position(
             chromosome, position_of_upstream_gene + 1).first - 1)]
         upstream_gene_id = refgff.gene_id(chromosome, position_of_upstream_gene)
-        transcripts.define_split(chromosome, transcript_id, split_coords, upstream_gene_id)
+        downstream_gene_id = refgff.gene_id(chromosome, position_of_upstream_gene + 1)
+        transcripts.define_split(chromosome, transcript_id, split_coords, \
+            upstream_gene_id, downstream_gene_id)
       end
     end
   end
@@ -700,37 +705,40 @@ end
 #   necessarily excise all transcripts in this intergenic region in phase 2's
 #   split! (e.g. when an intergenic transcript overlaps with only one adjacent
 #   gene's UTR).
+# Let's store a list of intergenic regions that are going to be split.
 require 'set'
-upstream_genes_to_split = {}
+genes_to_split = {}
 transcripts.transcripts_to_split.each do |chromosome, transcripts_to_split_by_chromosome|
-  upstream_genes_to_split[chromosome] = Set.new
-  transcripts_to_split_by_chromosome.each do |split_events|
+  genes_to_split[chromosome] = Set.new
+  transcripts_to_split_by_chromosome.each do |_, split_events|
     split_events.each do |split_event|
-      upstream_genes_to_split[chromosome].add split_event
+      genes_to_split[chromosome].add split_event
     end
   end
 end
 
-=begin
+# First, let's split transcripts over multiple genes, so that we can assign
+#   correct gene_ids to each transcript fragment.
+transcripts.split!
+
 # Add all transcripts from upstream, intergenic and downstream, if it's not
 #   already listed.
-upstream_genes_to_split.each do |chromosome, upstream_genes_to_split_by_chromosome|
-  upstream_genes_to_split_by_chromosome.each do |split_events|
-    split_events.each do |split_event|
-      transcripts.transcripts_for_gene(chromosome, split_event\
-          [:upstream_gene_id]).each do |transcript_candidate|
-        unless transcripts.transcripts_to_split[chromosome].has_key?\
-            (transcript_candidate)
-          transcripts.define_split(chromosome, transcript_candidate, \
-              split_event[:coords], split_event[:upstream_gene_id])
-        end
+genes_to_split.each do |chromosome, genes_to_split_by_chromosome|
+  genes_to_split_by_chromosome.each do |split_event|
+    transcripts.transcript_ids_for_gene(chromosome, split_event\
+        [:upstream_gene_id]).concat(transcripts.transcript_ids_for_gene( \
+        chromosome, split_event[:downstream_gene_id])).each do \
+        |adjacent_transcript_id|
+      if adjacent_transcript_id
+        transcripts.define_split(chromosome, adjacent_transcript_id, \
+            split_event[:coords], split_event[:upstream_gene_id], \
+            nil) # Don't need downstream_gene_id here.
       end
     end
   end
 end
 # Make (possibly large) object available for garbage collection.
-upstream_genes_to_split = nil
-=end
+genes_to_split = nil
 
 transcripts.split!
 
@@ -806,7 +814,8 @@ if !options[:minimal_split]
             # Cut prev_gene and current_gene transcripts, but not intergenic.
             (prev_gene_transcripts_and_coords.first.keys + \
                 current_gene_transcripts_and_coords.first.keys).each do |transcript_id|
-              transcripts.define_split(chromosome, transcript_id, split_coords, prev_gene_id)
+              transcripts.define_split(chromosome, transcript_id, split_coords, \
+                  prev_gene_id, nil) # Don't need downstream_gene_id here.
               transcripts.write_gene_id(chromosome, transcript_id, current_gene_id)
             end
           end
