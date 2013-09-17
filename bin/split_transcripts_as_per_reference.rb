@@ -337,8 +337,8 @@ class UserTranscripts
   #   for that gene (or chromosome), return empty array.
   def transcript_ids_for_gene(chromosome, gene_id)
     if @transcripts_by_chromosome[chromosome]
-      @transcripts_by_chromosome[chromosome].select do |_, transcript|
-        transcript[:gene_id] == gene_id
+      @transcripts_by_chromosome[chromosome].select do |_, transcript_info|
+        transcript_info[:gene_id] == gene_id
       end.collect do |transcript_id, _|
         transcript_id
       end
@@ -372,6 +372,16 @@ class UserTranscripts
       end
     else
       nil
+    end
+  end
+
+  # Delete transcripts with a particular gene_id. Only used for intergenic
+  #   transcripts.
+  def delete_transcripts_for_gene(chromosome, gene_id)
+    if @transcripts_by_chromosome[chromosome]
+      @transcripts_by_chromosome[chromosome].delete_if do |_, transcript_info|
+        transcript_info[:gene_id] == gene_id
+      end
     end
   end
 
@@ -578,7 +588,7 @@ refgff.check_overlaps
 #   first j genes, increase i to (i + j) for the next transcript.
 puts "#{Time.new}: fixing transcripts that overlap multiple reference genes."
 transcripts.chromosome_names.each do |chromosome|
-  puts "#{Time.new}:   analysing multiple genes per transcript for #{chromosome}."
+  puts "#{Time.new}:   identifying multiple genes per transcript for #{chromosome}."
   base_position_in_refgff_chr = 0
   length_of_refgff_chr = refgff.chromosome_length(chromosome)
   transcripts.transcript_ids(chromosome).each do |transcript_id|
@@ -721,8 +731,7 @@ end
 #   correct gene_ids to each transcript fragment.
 transcripts.split!
 
-# Add all transcripts from upstream, intergenic and downstream, if it's not
-#   already listed.
+# Flag adjacent upstream and downstream transcripts.
 genes_to_split.each do |chromosome, genes_to_split_by_chromosome|
   genes_to_split_by_chromosome.each do |split_event|
     transcripts.transcript_ids_for_gene(chromosome, split_event\
@@ -737,10 +746,21 @@ genes_to_split.each do |chromosome, genes_to_split_by_chromosome|
     end
   end
 end
-# Make (possibly large) object available for garbage collection.
-genes_to_split = nil
 
 transcripts.split!
+
+# Delete intergenic transcripts.
+genes_to_split.each do |chromosome, genes_to_split_by_chromosome|
+  genes_to_split_by_chromosome.each do |split_event|
+    transcripts.delete_transcripts_for_gene(chromosome, \
+        [split_event[:upstream_gene_id], split_event[:downstream_gene_id]])
+  end
+end
+
+transcripts.split!
+
+# Make (possibly large) object available for garbage collection.
+genes_to_split = nil
 
 puts "#{Time.new}: statistics for transcripts that overlap multiple reference genes."
 transcripts.overlap_stats.each do |genes, count|
