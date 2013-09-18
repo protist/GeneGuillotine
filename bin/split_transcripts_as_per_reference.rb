@@ -802,7 +802,6 @@ if !options[:minimal_split]
           transcripts_and_coords_union_for_gene(chromosome, \
           [prev_gene_id, current_gene_id])
       # TODO: if intergenic transcripts don't overlap with each other, they should have unique gene ids assigned.
-      split_coords = nil
       if prev_gene_id # Not the first iteration.
           # (Given there are any transcripts for that region,) is there direct
           #   overlap between the in-gene transcripts, or between any in-gene
