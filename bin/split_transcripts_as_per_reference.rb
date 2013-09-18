@@ -782,12 +782,9 @@ end
 ################################################################################
 ### Find overlapping transcripts with different gene IDs
 # TODO: what about ALAD-SPP? Only terminal exons? or not if they share the same tss? Getting complicated!
-# Use same cut points as used previously. If the overlap still contains this
-#   coordinate, they still fall in between the overlap, it makes sense to reuse
-#   this. Hence, assume that the transcript overlap is less informative than the
-#   positions of the reference genes. (I won't bother saving the previous split
-#   points, unless recalculation is slow.) If the overlap does not contain the
-#   split coordinate, find the minimal pileup position within the overlap.
+# If in-gene transcripts overlap with those on adjacent genes, or within
+#   adjacent intergenic regions, excise the overlap from the in-gene transcripts
+#   and remove the intergenic transcripts.
 
 if !options[:minimal_split]
   puts "#{Time.new}: re-sorting transcripts."
@@ -807,38 +804,53 @@ if !options[:minimal_split]
       # TODO: if intergenic transcripts don't overlap with each other, they should have unique gene ids assigned.
       split_coords = nil
       if prev_gene_id # Not the first iteration.
-        if prev_gene_transcripts_and_coords && \
-            current_gene_transcripts_and_coords
-          # Is there direct overlap between the in-gene transcripts?
-          if prev_gene_transcripts_and_coords.last.last >= \
-            current_gene_transcripts_and_coords.last.first
-            if options[:verbose]
-              puts 'there is overlap between transcript(s) on genes ' \
+          # (Given there are any transcripts for that region,) is there direct
+          #   overlap between the in-gene transcripts, or between any in-gene
+          #   transcript and an intergenic transcript.
+        to_split = false
+        if (prev_gene_transcripts_and_coords && \
+            current_gene_transcripts_and_coords) && \
+            (prev_gene_transcripts_and_coords.last.last >= \
+            current_gene_transcripts_and_coords.last.first)
+          if options[:verbose]
+            puts 'there is overlap between transcript(s) on genes ' \
                   "#{prev_gene_id} and #{current_gene_id}"
-            end
-            split_coords = [(refgff.gene_coords(chromosome, prev_gene_id).last + 1),
-                (refgff.gene_coords(chromosome, current_gene_id).first - 1)]
-          elsif intergenic_transcripts_and_coords && \
-              prev_gene_transcripts_and_coords.last.last >= \
-              intergenic_transcripts_and_coords.last.first && \
-              intergenic_transcripts_and_coords.last.last >= \
-              current_gene_transcripts_and_coords.last.first # intergenic overlaps both
-            if options[:verbose]
-              puts 'the intergenic transcript(s) overlap with transcript(s) on ' \
-                  "genes #{prev_gene_id} and #{current_gene_id}"
-            end
-            split_coords = [(refgff.gene_coords(chromosome, prev_gene_id).last + 1),
-                (refgff.gene_coords(chromosome, current_gene_id).first - 1)]
           end
-          if split_coords
-            # Cut prev_gene and current_gene transcripts, but not intergenic.
-            (prev_gene_transcripts_and_coords.first.keys + \
-                current_gene_transcripts_and_coords.first.keys).each do |transcript_id|
-              transcripts.define_split(chromosome, transcript_id, split_coords, \
+          to_split = true
+        elsif (prev_gene_transcripts_and_coords && \
+            intergenic_transcripts_and_coords) && \
+            (prev_gene_transcripts_and_coords.last.last >= \
+            intergenic_transcripts_and_coords.last.first)
+          if options[:verbose]
+            puts 'there is overlap between transcript(s) on gene ' \
+                  "#{prev_gene_id} and the downstream intergenic region"
+          end
+          to_split = true
+        elsif (current_gene_transcripts_and_coords && \
+            intergenic_transcripts_and_coords) && \
+            (intergenic_transcripts_and_coords.last.last >= \
+            current_gene_transcripts_and_coords.last.first)
+          if options[:verbose]
+            puts 'there is overlap between transcript(s) on gene ' \
+                  "#{current_gene_id} and the upstream intergenic region"
+          end
+          to_split = true
+        end
+        if to_split
+          split_coords = [[intergenic_transcripts_and_coords.last.first, \
+              current_gene_transcripts_and_coords.last.first].min,
+              [prev_gene_transcripts_and_coords.last.last, \
+              intergenic_transcripts_and_coords.last.last].max]
+          # Cut prev_gene and current_gene transcripts.
+          (prev_gene_transcripts_and_coords.first.keys + \
+              current_gene_transcripts_and_coords.first.keys).each do |transcript_id|
+            transcripts.define_split(chromosome, transcript_id, split_coords, \
                   prev_gene_id, nil) # Don't need downstream_gene_id here.
-              transcripts.write_gene_id(chromosome, transcript_id, current_gene_id)
-            end
+            transcripts.write_gene_id(chromosome, transcript_id, current_gene_id)
           end
+          # Delete intergenic transcripts.
+          transcripts.delete_transcripts_for_gene(chromosome, [prev_gene_id, \
+              current_gene_id])
         end
       end
       prev_gene_transcripts_and_coords = current_gene_transcripts_and_coords
