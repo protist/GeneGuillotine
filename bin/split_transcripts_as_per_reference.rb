@@ -120,9 +120,10 @@ class UserTranscripts
   # "other" information (e.g. strand, oId, tss_id)
   # This object will also store statistics on how many transcripts overlap with
   #   none, one or x genes, or are on a reference contigs with no genes.
-  def initialize(transcripts_by_chromosome = {}, overlap_stats = {})
+  def initialize(transcripts_by_chromosome = {})
     @transcripts_by_chromosome = transcripts_by_chromosome
-    @overlap_stats = overlap_stats # e.g. {NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1}
+    @stats = {phase_one_overlaps:{}, phase_one_intergenic:{transcripts:0, \
+        genes:0}} # e.g. {NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1}
                                    # where NA is for no genes, and 0 encompasses
                                    # both intergenic and terminal.
     @transcripts_to_split = {}
@@ -189,17 +190,22 @@ class UserTranscripts
   # Add to statistics about where transcripts lie.
   #   e.g. {:NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1},
   #   with :NA for no ref contig, and 0 for both intergenic and terminal.
-  def add_event(num_genes_overlap)
-    @overlap_stats[num_genes_overlap] ||= 0
-    @overlap_stats[num_genes_overlap] += 1
+  def add_event(type, num_genes_overlap)
+    case type
+      when :phase_one_overlaps
+        @stats[:phase_one_overlaps][num_genes_overlap] ||= 0
+        @stats[:phase_one_overlaps][num_genes_overlap] += 1
+      when :phase_one_intergenic
+        #TODO: more stats.
+    end
   end
 
   # Output statistics about where the transcripts lie.
   #   e.g. {:NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1},
   #   with :NA for no ref contig, and 0 for both intergenic and terminal.
-  def overlap_stats
-    output_hash = @overlap_stats.select { |key, _| key==:NA}
-    output_hash.merge(Hash[@overlap_stats.select {|key, _| key!=:NA}.
+  def stats
+    output_hash = @stats[:phase_one_overlaps].select { |key, _| key==:NA}
+    output_hash.merge(Hash[@stats[:phase_one_overlaps].select {|key, _| key!=:NA}.
                                sort_by {|key, _| key }])
   end
 
@@ -655,7 +661,7 @@ transcripts.chromosome_names.each do |chromosome|
         if $options[:verbosity] >= 2
           puts 'no genes on this reference contig'
         end
-        transcripts.add_event(:NA)
+        transcripts.add_event(:phase_one_overlaps, :NA)
         transcripts.write_gene_id(chromosome, transcript_id,
                                   :'No_genes_on_ref_contig')
       else # at the end of the chromosome
@@ -666,7 +672,7 @@ transcripts.chromosome_names.each do |chromosome|
           puts "nearest_neighbour is the last gene, #{refgff.
               gene_id(chromosome, (length_of_refgff_chr - 1))}"
         end
-        transcripts.add_event(0)
+        transcripts.add_event(:phase_one_overlaps, 0)
         transcripts.write_gene_id(chromosome, transcript_id, refgff.
             gene_id(chromosome, (length_of_refgff_chr - 1)).end)
       end
@@ -675,7 +681,7 @@ transcripts.chromosome_names.each do |chromosome|
         puts "nearest_neighbour is the first gene, #{refgff.
             gene_id(chromosome, (0))}"
       end
-      transcripts.add_event(0)
+      transcripts.add_event(:phase_one_overlaps, 0)
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, (0)).begin)
     elsif position_of_first_overlapping_gene == position_of_last_overlapping_gene
@@ -683,7 +689,7 @@ transcripts.chromosome_names.each do |chromosome|
         puts "covers one gene, #{refgff.
             gene_id(chromosome, position_of_first_overlapping_gene)}"
       end
-      transcripts.add_event(1)
+      transcripts.add_event(:phase_one_overlaps, 1)
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, position_of_first_overlapping_gene))
     elsif position_of_last_overlapping_gene < position_of_first_overlapping_gene # the transcript is wholly intergenic
@@ -692,7 +698,7 @@ transcripts.chromosome_names.each do |chromosome|
             "#{refgff.gene_id(chromosome, position_of_last_overlapping_gene)} and "\
             "#{refgff.gene_id(chromosome, position_of_first_overlapping_gene)}"
       end
-      transcripts.add_event(0)
+      transcripts.add_event(:phase_one_overlaps, 0)
       transcripts.write_gene_id(chromosome, transcript_id, \
           [refgff.gene_id(chromosome, position_of_last_overlapping_gene), \
           refgff.gene_id(chromosome, position_of_first_overlapping_gene)])
@@ -703,7 +709,9 @@ transcripts.chromosome_names.each do |chromosome|
             gene_id(chromosome, position_of_first_overlapping_gene)} to "\
           "#{refgff.gene_id(chromosome, position_of_last_overlapping_gene)}"
       end
-      transcripts.add_event(position_of_last_overlapping_gene - position_of_first_overlapping_gene + 1)
+      transcripts.add_event(:phase_one_overlaps, \
+          position_of_last_overlapping_gene - \
+          position_of_first_overlapping_gene + 1)
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, position_of_last_overlapping_gene)) # Temporarily store this gene id for the entire transcript (easier when naming fragments later).
       (position_of_first_overlapping_gene..(position_of_last_overlapping_gene - 1)).
@@ -774,23 +782,6 @@ transcripts.split!
 
 # Make (possibly large) object available for garbage collection.
 genes_to_split = nil
-
-puts "#{Time.new}: statistics for transcripts that overlap multiple reference genes."
-transcripts.overlap_stats.each do |genes, count|
-  if genes == :NA
-    if count == 1
-      puts '  1 transcript has no matching reference contig'
-    else
-      puts "  #{count} transcripts have no matching reference contig"
-    end
-  else
-    if count == 1
-      puts "  1 transcript overlaps with #{genes} genes"
-    else
-      puts "  #{count} transcripts overlap with #{genes} genes each"
-    end
-  end
-end
 
 ################################################################################
 ### Find overlapping transcripts with different gene IDs
@@ -887,9 +878,23 @@ end
 #   Need to change this to string.between(second_string)
 #   If intergenic transcripts overlap in-gene transcripts, just change their id to the relevant gene id?
 
+transcripts.write_to_file($options[:output_path])
+
 puts 'SUMMARY
 =======
 '
-puts transcripts.overlap_stats
-
-transcripts.write_to_file($options[:output_path])
+transcripts.stats.each do |genes, count|
+  if genes == :NA
+    if count == 1
+      puts '  1 transcript has no matching reference contig'
+    else
+      puts "  #{count} transcripts have no matching reference contig"
+    end
+  else
+    if count == 1
+      puts "  1 transcript overlaps with #{genes} genes"
+    else
+      puts "  #{count} transcripts overlap with #{genes} genes each"
+    end
+  end
+end
