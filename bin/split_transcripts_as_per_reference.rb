@@ -26,7 +26,7 @@
 #   transcript, only gene ID).
 
 require 'optparse'
-options = {}
+$options = {}
 OptionParser.new do |opts|
   opts.banner='This script reads in a gtf file, and splits it into non-'\
               'overlapping genes, with one gene per gene according to a second '\
@@ -36,32 +36,34 @@ OptionParser.new do |opts|
   opts.on_tail('-h', '--help', 'Show this message') do
     puts opts; exit
   end
-  opts.on('-v', '--[no-]verbose', 'Run verbosely') do |v|
-    options[:verbose] = v
+  # Verbosity off (or == 0) is base-level information. Verbosity == 1 is
+  #   chromosome-level. Verbosity == 2 is transcript/gene-level.
+  opts.on('-v', '--[no-]verbose [OPT]', 'Run verbosely, optionally at level 2') do |v|
+    $options[:verbosity] = (v || 1).to_i
   end
   opts.on('-i', '--input GTF_FILE',
         'Primary GTF_FILE (e.g. from Cuffmerge) is required.') do |i|
-    options[:mygtf_path] = i
+    $options[:mygtf_path] = i
   end
   opts.on('-g', '--ref_gff GFF_FILE',
         'Reference GFF_FILE (e.g. from eupathdb) is required.') do |g|
-    options[:refgff_path] = g
+    $options[:refgff_path] = g
   end
   opts.on('-o', '--output OUTPUT_FILE',
         'OUTPUT_FILE is required.') do |o|
-    options[:output_path] = o
+    $options[:output_path] = o
   end
   opts.on('-m', '--minimal_split', 'Only split transcripts that overlap ' \
       'multiple genes. Do not split when multiple adjacent transcripts ' \
       'overlap') do |m|
-    options[:minimal_split] = m
+    $options[:minimal_split] = m
   end
 end.parse!
 
 # Mandatory "options"
-raise OptionParser::MissingArgument if options[:mygtf_path].nil? ||
-    options[:refgff_path].nil? ||
-    options[:output_path].nil?
+raise OptionParser::MissingArgument if $options[:mygtf_path].nil? ||
+    $options[:refgff_path].nil? ||
+    $options[:output_path].nil?
 
 # TODO: allow option to allow an absolute extension on either side of the CDS
 #   (e.g. 500 bp), while preventing adjacent defined UTRs from being too
@@ -157,9 +159,13 @@ class UserTranscripts
     @transcripts_by_chromosome.each do |chromosome, transcripts_for_this_chromosome|
       sorted_chromosome = Hash[transcripts_for_this_chromosome.sort_by { |_, value| value[:coords].first.first }]
       if sorted_chromosome.keys == transcripts_for_this_chromosome.keys
-        puts "#{Time.new}:   chromosome #{chromosome} was already ordered correctly."
+        if $options[:verbosity] >= 1
+          puts "#{Time.new}:   chromosome #{chromosome} was already ordered correctly."
+        end
       else
-        puts "#{Time.new}:   chromosome #{chromosome} is now ordered correctly."
+        if $options[:verbosity] >= 1
+          puts "#{Time.new}:   chromosome #{chromosome} is now ordered correctly."
+        end
         @transcripts_by_chromosome[chromosome] = sorted_chromosome
       end
     end
@@ -419,7 +425,7 @@ end
 #     for now, unless this has a large effect on efficiency).
 puts "#{Time.new}: parsing primary gtf file."
 transcripts = UserTranscripts.new
-File.open(options[:mygtf_path]).each do |line| # There are no header lines for cuffmerge out.
+File.open($options[:mygtf_path]).each do |line| # There are no header lines for cuffmerge out.
                                                # These are the parts of each line that we need.
   splitline = line.chomp.split("\t")
   if splitline !=[]
@@ -469,9 +475,13 @@ class ReferenceGFF
     @genes_by_chromosome.each do |chromosome, genes_for_this_chromosome|
       sorted_chromosome = Hash[genes_for_this_chromosome.sort_by { |_, coords| coords[0] }]
       if sorted_chromosome.keys == genes_for_this_chromosome.keys
-        puts "#{Time.new}:   chromosome #{chromosome} was sorted correctly."
+        if $options[:verbosity] >= 1
+          puts "#{Time.new}:   chromosome #{chromosome} was sorted correctly."
+        end
       else
-        puts "#{Time.new}:   WARNING! Chromosome #{chromosome} was not sorted correctly (but now it is)."
+        if $options[:verbosity] >= 1
+          puts "#{Time.new}:   WARNING! Chromosome #{chromosome} was not sorted correctly (but now it is)."
+        end
         @genes_by_chromosome[chromosome] = sorted_chromosome
       end
     end
@@ -559,7 +569,7 @@ end
 #   sharing the same parent (without -1).
 puts "#{Time.new}: parsing reference gff file."
 refgff = ReferenceGFF.new
-File.open(options[:refgff_path]).each do |line|
+File.open($options[:refgff_path]).each do |line|
   splitline = line.split("\t")
   if splitline[2] == 'CDS' # Hence, ignore the header lines.
                            # These are the parts of the line that we need.
@@ -588,7 +598,9 @@ refgff.check_overlaps
 #   first j genes, increase i to (i + j) for the next transcript.
 puts "#{Time.new}: fixing transcripts that overlap multiple reference genes."
 transcripts.chromosome_names.each do |chromosome|
-  puts "#{Time.new}:   identifying multiple genes per transcript for #{chromosome}."
+  if $options[:verbosity] >= 1
+    puts "#{Time.new}:   identifying multiple genes per transcript for #{chromosome}."
+  end
   base_position_in_refgff_chr = 0
   length_of_refgff_chr = refgff.chromosome_length(chromosome)
   transcripts.transcript_ids(chromosome).each do |transcript_id|
@@ -634,13 +646,13 @@ transcripts.chromosome_names.each do |chromosome|
       position_of_last_overlapping_gene = (length_of_refgff_chr - 1)
     end
 
-    if options[:verbose]
+    if $options[:verbosity] >= 2
       print "  #{transcript_id}: "
     end
     # What is the outcome of our tests?
     if !position_of_first_overlapping_gene
       if !position_of_last_overlapping_gene # no genes on this chromosome
-        if options[:verbose]
+        if $options[:verbosity] >= 2
           puts 'no genes on this reference contig'
         end
         transcripts.add_event(:NA)
@@ -650,7 +662,7 @@ transcripts.chromosome_names.each do |chromosome|
            # Could introduce this test earlier, and quickly mark all remaining
            #   transcripts identically, but there shouldn't be many, and it's
            #   not costly to iterate.
-        if options[:verbose]
+        if $options[:verbosity] >= 2
           puts "nearest_neighbour is the last gene, #{refgff.
               gene_id(chromosome, (length_of_refgff_chr - 1))}"
         end
@@ -659,7 +671,7 @@ transcripts.chromosome_names.each do |chromosome|
             gene_id(chromosome, (length_of_refgff_chr - 1)).end)
       end
     elsif position_of_last_overlapping_gene == -1 # beginning of the chromosome
-      if options[:verbose]
+      if $options[:verbosity] >= 2
         puts "nearest_neighbour is the first gene, #{refgff.
             gene_id(chromosome, (0))}"
       end
@@ -667,7 +679,7 @@ transcripts.chromosome_names.each do |chromosome|
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, (0)).begin)
     elsif position_of_first_overlapping_gene == position_of_last_overlapping_gene
-      if options[:verbose]
+      if $options[:verbosity] >= 2
         puts "covers one gene, #{refgff.
             gene_id(chromosome, position_of_first_overlapping_gene)}"
       end
@@ -675,7 +687,7 @@ transcripts.chromosome_names.each do |chromosome|
       transcripts.write_gene_id(chromosome, transcript_id, refgff.
           gene_id(chromosome, position_of_first_overlapping_gene))
     elsif position_of_last_overlapping_gene < position_of_first_overlapping_gene # the transcript is wholly intergenic
-      if options[:verbose]
+      if $options[:verbosity] >= 2
         puts 'intergenic, between '\
             "#{refgff.gene_id(chromosome, position_of_last_overlapping_gene)} and "\
             "#{refgff.gene_id(chromosome, position_of_first_overlapping_gene)}"
@@ -685,7 +697,7 @@ transcripts.chromosome_names.each do |chromosome|
           [refgff.gene_id(chromosome, position_of_last_overlapping_gene), \
           refgff.gene_id(chromosome, position_of_first_overlapping_gene)])
     else # Covers multiple genes. Find and record split positions.
-      if options[:verbose]
+      if $options[:verbosity] >= 2
         puts "covers #{position_of_last_overlapping_gene - \
           position_of_first_overlapping_gene + 1} genes from #{refgff.
             gene_id(chromosome, position_of_first_overlapping_gene)} to "\
@@ -732,6 +744,7 @@ end
 transcripts.split!
 
 # Flag adjacent upstream and downstream transcripts.
+puts "#{Time.new}: fixing additional transcripts in these intergenic regions."
 genes_to_split.each do |chromosome, genes_to_split_by_chromosome|
   genes_to_split_by_chromosome.each do |split_event|
     transcripts.transcript_ids_for_gene(chromosome, split_event\
@@ -782,17 +795,19 @@ end
 ################################################################################
 ### Find overlapping transcripts with different gene IDs
 # TODO: what about ALAD-SPP? Only terminal exons? or not if they share the same tss? Getting complicated!
-# If in-gene transcripts overlap with those on adjacent genes, or within
+# If in-gene transripts overlap with those on adjacent genes, or within
 #   adjacent intergenic regions, excise the overlap from the in-gene transcripts
 #   and remove the intergenic transcripts.
 
-if !options[:minimal_split]
+if !$options[:minimal_split]
   puts "#{Time.new}: re-sorting transcripts."
   transcripts.sort!
 
   puts "#{Time.new}: fixing overlapping transcripts on adjacent genes."
   refgff.chromosome_names.each do |chromosome|
-    puts "#{Time.new}:   analysing adjacent overlapping transcripts for #{chromosome}."
+    if $options[:verbosity] >= 1
+      puts "#{Time.new}:   analysing adjacent overlapping transcripts for #{chromosome}."
+    end
     prev_gene_transcripts_and_coords = nil
     prev_gene_id = nil
     refgff.gene_ids(chromosome).each do |current_gene_id|
@@ -811,7 +826,7 @@ if !options[:minimal_split]
             current_gene_transcripts_and_coords) && \
             (prev_gene_transcripts_and_coords.last.last >= \
             current_gene_transcripts_and_coords.last.first)
-          if options[:verbose]
+          if $options[:verbosity] >= 2
             puts 'there is overlap between transcript(s) on genes ' \
                   "#{prev_gene_id} and #{current_gene_id}"
           end
@@ -820,7 +835,7 @@ if !options[:minimal_split]
             intergenic_transcripts_and_coords) && \
             (prev_gene_transcripts_and_coords.last.last >= \
             intergenic_transcripts_and_coords.last.first)
-          if options[:verbose]
+          if $options[:verbosity] >= 2
             puts 'there is overlap between transcript(s) on gene ' \
                   "#{prev_gene_id} and the downstream intergenic region"
           end
@@ -829,7 +844,7 @@ if !options[:minimal_split]
             intergenic_transcripts_and_coords) && \
             (intergenic_transcripts_and_coords.last.last >= \
             current_gene_transcripts_and_coords.last.first)
-          if options[:verbose]
+          if $options[:verbosity] >= 2
             puts 'there is overlap between transcript(s) on gene ' \
                   "#{current_gene_id} and the upstream intergenic region"
           end
@@ -877,4 +892,4 @@ puts 'SUMMARY
 '
 puts transcripts.overlap_stats
 
-transcripts.write_to_file(options[:output_path])
+transcripts.write_to_file($options[:output_path])
