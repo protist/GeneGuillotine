@@ -152,7 +152,7 @@ class UserTranscripts
     @transcripts_by_chromosome[chromosome.to_sym][transcript_id.to_sym][:other] ||= [strand, notes]
   end
 
-  attr_reader(:transcripts_by_chromosome, :transcripts_to_split, :previously_split_transcripts) # for debugging
+  attr_reader(:transcripts_by_chromosome, :transcripts_to_split, :previously_split_transcripts, :stats)
 
   # For each chromosome, sort transcripts by start coordinates.
   # TODO: sort coordinates within transcripts?
@@ -198,15 +198,6 @@ class UserTranscripts
       when :phase_one_intergenic
         #TODO: more stats.
     end
-  end
-
-  # Output statistics about where the transcripts lie.
-  #   e.g. {:NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1},
-  #   with :NA for no ref contig, and 0 for both intergenic and terminal.
-  def stats
-    output_hash = @stats[:phase_one_overlaps].select { |key, _| key==:NA}
-    output_hash.merge(Hash[@stats[:phase_one_overlaps].select {|key, _| key!=:NA}.
-                               sort_by {|key, _| key }])
   end
 
   # Write gene id to a transcript.
@@ -880,21 +871,31 @@ end
 
 transcripts.write_to_file($options[:output_path])
 
-puts 'SUMMARY
+puts '
+SUMMARY
 =======
+Transcripts that overlap multiple genes:
 '
-transcripts.stats.each do |genes, count|
-  if genes == :NA
-    if count == 1
-      puts '  1 transcript has no matching reference contig'
-    else
-      puts "  #{count} transcripts have no matching reference contig"
-    end
-  else
-    if count == 1
-      puts "  1 transcript overlaps with #{genes} genes"
-    else
-      puts "  #{count} transcripts overlap with #{genes} genes each"
-    end
-  end
+
+phase_one_overlaps_stats = transcripts.stats[:phase_one_overlaps]
+total_transcripts = 0
+phase_one_overlaps_stats.values.each do |count|
+  total_transcripts += count
 end
+
+if (na_count = phase_one_overlaps_stats[:NA])
+  puts "  #{na_count} transcript#{'s' if na_count != 1} (" \
+      "#{(na_count.to_f/total_transcripts*100).round(1)}%) "\
+      "with no matching reference contig"
+  phase_one_overlaps_stats.delete(:NA)
+end
+phase_one_overlaps_stats.sort_by {|key, _| key }.each do |genes, count|
+  puts "  #{count} transcript#{'s' if count != 1} (" \
+      "#{(count.to_f/total_transcripts*100).round(1)}%) overlap with #{genes} " \
+      "gene#{'s' if genes != 1} each"
+end
+
+puts "------------------------
+  #{total_transcripts} transcripts total
+
+x associated intergenic transcripts removed over y intergenic regions."
