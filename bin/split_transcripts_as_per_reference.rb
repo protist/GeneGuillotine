@@ -123,7 +123,7 @@ class UserTranscripts
   def initialize(transcripts_by_chromosome = {})
     @transcripts_by_chromosome = transcripts_by_chromosome
     @stats = {phase_one_overlaps:{}, phase_one_intergenic:{transcripts:0, \
-        genes:0}} # e.g. {NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1}
+        intergenics:0}} # e.g. {NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1}
                                    # where NA is for no genes, and 0 encompasses
                                    # both intergenic and terminal.
     @transcripts_to_split = {}
@@ -187,16 +187,23 @@ class UserTranscripts
     @transcripts_by_chromosome[chromosome].keys
   end
 
-  # Add to statistics about where transcripts lie.
-  #   e.g. {:NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1},
-  #   with :NA for no ref contig, and 0 for both intergenic and terminal.
-  def add_event(type, num_genes_overlap)
-    case type
+  # Add to statistics about where transcripts lie and what has been processed.
+  def add_event(category, data)
+    case category
       when :phase_one_overlaps
-        @stats[:phase_one_overlaps][num_genes_overlap] ||= 0
-        @stats[:phase_one_overlaps][num_genes_overlap] += 1
+        # data = the number of overlapping genes for a transcript
+        #   e.g. {:NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1},
+        #   with :NA for no ref contig, and 0 for both intergenic and terminal.
+        @stats[:phase_one_overlaps][data] ||= 0
+        @stats[:phase_one_overlaps][data] += 1
       when :phase_one_intergenic
-        #TODO: more stats.
+        # data = {intergenics: #} || {transcripts: #}
+        #   i.e. for number of intergenic transcripts removed over y intergenic
+        #   regions. N.B. y refers to the amount of regions scrubbed, some might
+        #   have been devoid of transcripts.
+        @stats[:phase_one_intergenic][data.first] += data.last
+      else
+        abort("ERROR: add_event called with unknown category #{category}")
     end
   end
 
@@ -379,12 +386,16 @@ class UserTranscripts
   end
 
   # Delete transcripts with a particular gene_id. Only used for intergenic
-  #   transcripts.
+  #   transcripts. Returns the number of transcripts deleted.
   def delete_transcripts_for_gene(chromosome, gene_id)
     if @transcripts_by_chromosome[chromosome]
+      initial_length = @transcripts_by_chromosome[chromosome].length
       @transcripts_by_chromosome[chromosome].delete_if do |_, transcript_info|
         transcript_info[:gene_id] == gene_id
       end
+      initial_length - @transcripts_by_chromosome[chromosome].length
+    else
+      0
     end
   end
 
@@ -728,12 +739,12 @@ end
 #   gene's UTR).
 # Let's store a list of intergenic regions that are going to be split.
 require 'set'
-genes_to_split = {}
+intergenics_to_split = {}
 transcripts.transcripts_to_split.each do |chromosome, transcripts_to_split_by_chromosome|
-  genes_to_split[chromosome] = Set.new
+  intergenics_to_split[chromosome] = Set.new
   transcripts_to_split_by_chromosome.each do |_, split_events|
     split_events.each do |split_event|
-      genes_to_split[chromosome].add split_event
+      intergenics_to_split[chromosome].add split_event
     end
   end
 end
@@ -744,8 +755,8 @@ transcripts.split!
 
 # Flag adjacent upstream and downstream transcripts.
 puts "#{Time.new}: fixing additional transcripts in these intergenic regions."
-genes_to_split.each do |chromosome, genes_to_split_by_chromosome|
-  genes_to_split_by_chromosome.each do |split_event|
+intergenics_to_split.each do |chromosome, intergenics_to_split_by_chromosome|
+  intergenics_to_split_by_chromosome.each do |split_event|
     transcripts.transcript_ids_for_gene(chromosome, split_event\
         [:upstream_gene_id]).concat(transcripts.transcript_ids_for_gene( \
         chromosome, split_event[:downstream_gene_id])).each do \
@@ -762,17 +773,20 @@ end
 transcripts.split!
 
 # Delete intergenic transcripts.
-genes_to_split.each do |chromosome, genes_to_split_by_chromosome|
-  genes_to_split_by_chromosome.each do |split_event|
-    transcripts.delete_transcripts_for_gene(chromosome, \
+intergenics_to_split.each do |chromosome, intergenics_to_split_by_chromosome|
+  intergenics_to_split_by_chromosome.each do |split_event|
+    transcripts.add_event(:phase_one_intergenic, [:intergenics, 1])
+    transcripts_deleted = transcripts.delete_transcripts_for_gene(chromosome, \
         [split_event[:upstream_gene_id], split_event[:downstream_gene_id]])
+    transcripts.add_event(:phase_one_intergenic, [:transcripts, \
+        transcripts_deleted])
   end
 end
 
 transcripts.split!
 
 # Make (possibly large) object available for garbage collection.
-genes_to_split = nil
+intergenics_to_split = nil
 
 ################################################################################
 ### Find overlapping transcripts with different gene IDs
@@ -886,7 +900,7 @@ end
 if (na_count = phase_one_overlaps_stats[:NA])
   puts "  #{na_count} transcript#{'s' if na_count != 1} (" \
       "#{(na_count.to_f/total_transcripts*100).round(1)}%) "\
-      "with no matching reference contig"
+      'with no matching reference contig'
   phase_one_overlaps_stats.delete(:NA)
 end
 phase_one_overlaps_stats.sort_by {|key, _| key }.each do |genes, count|
@@ -898,4 +912,6 @@ end
 puts "------------------------
   #{total_transcripts} transcripts total
 
-x associated intergenic transcripts removed over y intergenic regions."
+#{transcripts.stats[:phase_one_intergenic][:intergenics]} intergenic regions " \
+"removed, including #{transcripts.stats[:phase_one_intergenic][:transcripts]} " \
+'associated intergenic transcripts.'
