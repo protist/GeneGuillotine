@@ -197,7 +197,7 @@ class UserTranscripts
         @stats[:phase_one_overlaps][data] ||= 0
         @stats[:phase_one_overlaps][data] += 1
       when :phase_one_intergenic
-        # data = {intergenics: #} || {transcripts: #}
+        # data = [intergenics, #] || [transcripts, #]
         #   i.e. for number of intergenic transcripts removed over y intergenic
         #   regions. N.B. y refers to the amount of regions scrubbed, some might
         #   have been devoid of transcripts.
