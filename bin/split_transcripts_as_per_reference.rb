@@ -64,6 +64,7 @@ end.parse!
 raise OptionParser::MissingArgument if $options[:mygtf_path].nil? ||
     $options[:refgff_path].nil? ||
     $options[:output_path].nil?
+$options[:verbosity] = 0 if !$options[:verbosity]
 
 # TODO: allow option to allow an absolute extension on either side of the CDS
 #   (e.g. 500 bp), while preventing adjacent defined UTRs from being too
@@ -123,9 +124,8 @@ class UserTranscripts
   def initialize(transcripts_by_chromosome = {})
     @transcripts_by_chromosome = transcripts_by_chromosome
     @stats = {phase_one_overlaps:{}, phase_one_intergenic:{transcripts:0, \
-        intergenics:0}} # e.g. {NA=>1, 0=>2, 1=>20, 2=>5, 3=>2, 5=>1}
-                                   # where NA is for no genes, and 0 encompasses
-                                   # both intergenic and terminal.
+        intergenics:0}, phase_two:{intergenics_adj_genes:0, \
+        intergenics_adj_inter:0, transcripts:0}}
     @transcripts_to_split = {}
     @previously_split_transcripts = {} # {:parent_transcript_id => :transcript_id:last#}
   end
@@ -197,11 +197,18 @@ class UserTranscripts
         @stats[:phase_one_overlaps][data] ||= 0
         @stats[:phase_one_overlaps][data] += 1
       when :phase_one_intergenic
-        # data = [intergenics, #] || [transcripts, #]
-        #   i.e. for number of intergenic transcripts removed over y intergenic
+        # data = [:intergenics, #] || [:transcripts, #]
+        #   i.e. x number of intergenic transcripts removed over y intergenic
         #   regions. N.B. y refers to the amount of regions scrubbed, some might
         #   have been devoid of transcripts.
         @stats[:phase_one_intergenic][data.first] += data.last
+      when :phase_two
+        # data = [:intergenics_adj_genes, #] || [:intergenics_adj_inter] ||
+        #   [:transcripts, #]
+        #   i.e. in how many intergenic regions was overlap detected, and which
+        #   kind was it? How many intergenic transcripts were deleted as a
+        #   result?
+        @stats[:phase_two][data.first] += data.last
       else
         abort("ERROR: add_event called with unknown category #{category}")
     end
@@ -791,7 +798,7 @@ intergenics_to_split = nil
 ################################################################################
 ### Find overlapping transcripts with different gene IDs
 # TODO: what about ALAD-SPP? Only terminal exons? or not if they share the same tss? Getting complicated!
-# If in-gene transripts overlap with those on adjacent genes, or within
+# If in-gene transcripts overlap with those on adjacent genes, or within
 #   adjacent intergenic regions, excise the overlap from the in-gene transcripts
 #   and remove the intergenic transcripts.
 
@@ -827,6 +834,7 @@ if !$options[:minimal_split]
                   "#{prev_gene_id} and #{current_gene_id}"
           end
           to_split = true
+          transcripts.add_event(:phase_two, [:intergenics_adj_genes, 1])
         elsif (prev_gene_transcripts_and_coords && \
             intergenic_transcripts_and_coords) && \
             (prev_gene_transcripts_and_coords.last.last >= \
@@ -836,6 +844,7 @@ if !$options[:minimal_split]
                   "#{prev_gene_id} and the downstream intergenic region"
           end
           to_split = true
+          transcripts.add_event(:phase_two, [:intergenics_adj_inter, 1])
         elsif (current_gene_transcripts_and_coords && \
             intergenic_transcripts_and_coords) && \
             (intergenic_transcripts_and_coords.last.last >= \
@@ -845,6 +854,7 @@ if !$options[:minimal_split]
                   "#{current_gene_id} and the upstream intergenic region"
           end
           to_split = true
+          transcripts.add_event(:phase_two, [:intergenics_adj_genes, 1])
         end
         if to_split
           split_coords = [[intergenic_transcripts_and_coords.last.first, \
@@ -859,8 +869,9 @@ if !$options[:minimal_split]
             transcripts.write_gene_id(chromosome, transcript_id, current_gene_id)
           end
           # Delete intergenic transcripts.
-          transcripts.delete_transcripts_for_gene(chromosome, [prev_gene_id, \
-              current_gene_id])
+          transcripts.add_event(:phase_two, [:transcripts, \
+              transcripts.delete_transcripts_for_gene(chromosome, \
+              [prev_gene_id, current_gene_id])])
         end
       end
       prev_gene_transcripts_and_coords = current_gene_transcripts_and_coords
@@ -909,9 +920,20 @@ phase_one_overlaps_stats.sort_by {|key, _| key }.each do |genes, count|
       "gene#{'s' if genes != 1} each"
 end
 
-puts "------------------------
+puts "  ------------------------
   #{total_transcripts} transcripts total
 
-#{transcripts.stats[:phase_one_intergenic][:intergenics]} intergenic regions " \
+  #{transcripts.stats[:phase_one_intergenic][:intergenics]} intergenic regions " \
 "removed, including #{transcripts.stats[:phase_one_intergenic][:transcripts]} " \
-'associated intergenic transcripts.'
+"associated intergenic transcripts.
+
+Transcripts on adjacent genes that overlap:
+  #{transcripts.stats[:phase_two][:intergenics_adj_genes] + \
+  transcripts.stats[:phase_two][:intergenics_adj_inter]} intergenic regions " \
+  "fixed.
+    #{transcripts.stats[:phase_two][:intergenics_adj_genes]} on " \
+    "adjacent genes (possibly including intergenics).
+    #{transcripts.stats[:phase_two][:intergenics_adj_inter]} purely from " \
+    "overlaps with intergenic transcripts.
+  #{transcripts.stats[:phase_two][:transcripts]} associated intergenic " \
+  'transcripts removed.'
