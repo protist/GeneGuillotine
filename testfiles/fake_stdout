@@ -1,0 +1,28 @@
+2013-09-23 17:29:44 +1000: parsing primary gtf file.
+2013-09-23 17:29:44 +1000: checking order of primary gtf file.
+2013-09-23 17:29:44 +1000: parsing reference gff file.
+2013-09-23 17:29:44 +1000: checking order of reference gff file.
+2013-09-23 17:29:44 +1000: checking reference gff file for overlapping genes.
+2013-09-23 17:29:44 +1000: fixing transcripts that overlap multiple reference genes.
+2013-09-23 17:29:44 +1000: fixing additional transcripts in these intergenic regions.
+2013-09-23 17:29:44 +1000: re-sorting transcripts.
+2013-09-23 17:29:44 +1000: fixing overlapping transcripts on adjacent genes.
+
+SUMMARY
+=======
+Transcripts that overlap multiple genes:
+  1 transcript (1.1%) with no matching reference contig
+  22 transcripts (24.2%) overlap with 0 genes each
+  36 transcripts (39.6%) overlap with 1 gene each
+  23 transcripts (25.3%) overlap with 2 genes each
+  9 transcripts (9.9%) overlap with 3 genes each
+  ------------------------
+  91 transcripts total
+
+  6 intergenic regions removed, including 6 associated intergenic transcripts.
+
+Transcripts on adjacent genes that overlap:
+  8 intergenic regions fixed.
+    6 on adjacent genes (possibly including intergenics).
+    2 purely from overlaps with intergenic transcripts.
+  8 associated intergenic transcripts removed.
