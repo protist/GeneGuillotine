@@ -71,9 +71,6 @@ $options[:verbosity] = 0 if !$options[:verbosity]
 #   close, perhaps by defining maximum UTR length? I'm not sure how useful this
 #   would be in terms of power, it's slightly complicated to code (including
 #   implementing all the options), and might result in more false positives.
-# TODO: Allow option to only split from phase 1, i.e. transcripts that lie over
-#   multiple genes. Adjacent transcripts that overlap might be useful for some
-#   downstream analyses.
 
 # Require Ruby 1.9.2 for ordered hash. This is quicker than continual hash.sort.
 min_release = '1.9.2'
