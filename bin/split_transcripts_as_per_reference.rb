@@ -825,7 +825,6 @@ if !$options[:minimal_split]
       intergenic_transcripts_and_coords = transcripts.
           transcripts_and_coords_union_for_gene(chromosome, \
           [prev_gene_id, current_gene_id])
-      # TODO: if intergenic transcripts don't overlap with each other, they should have unique gene ids assigned.
       if prev_gene_id # Not the first iteration.
           # (Given there are any transcripts for that region,) is there direct
           #   overlap between the in-gene transcripts, or between any in-gene
@@ -891,14 +890,9 @@ end
 ### Make gene name unique if transcripts do not overlap
 # DEXSeq trusts geneIDs. Hence, it combines two genes if they have the same
 #   geneID, regardless of where they are located.
-
-# TODO: if there are multiple non-overlapping transcripts on a single gene, we
-#   should break them up into -a, -b, etc. Similarly for intergenic transcripts.
-
 # TODO: intergenic transcripts need to have their gene name numbered: e.g. :a, :b
-# TODO: currently, intergenic transcripts have gene id as [:prev, :next].
-#   Need to change this to string.between(second_string)
-#   If intergenic transcripts overlap in-gene transcripts, just change their id to the relevant gene id?
+#   Not sure if I'll bother with this. Our premise is to trust the gene models.
+#   Allowing intergenic transcripts to exist at all is beyond our premise.
 
 transcripts.write_to_file($options[:output_path])
 
