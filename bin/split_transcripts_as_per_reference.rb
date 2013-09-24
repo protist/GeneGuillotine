@@ -81,13 +81,9 @@ end
 
 ################################################################################
 ### Define string modifiers when transcripts aren't on one gene. These can
-###   mostly be modified here, except were indicated.
+###   be modified.
 class Symbol
 # Define the gene ID to use if the transcript does not overlap any genes.
-  # Transcript is intergenic.
-  def between(downstream_gene)
-    (self.to_s + '_to_' + downstream_gene.to_s).to_sym
-  end
   # Transcript is after all annotated reference genes on this contig.
   def end
     ('after_last_' + self.to_s).to_sym
@@ -105,6 +101,17 @@ class Symbol
       (self.to_s + second_suffix).to_sym
     else
       self.to_s.next.to_sym
+    end
+  end
+end
+
+class Array
+  # Transcript is intergenic. [:gene1, :gene2]
+  def between
+    if self.length == 2
+      "[#{self.first}, #{self.last}]"
+    else
+      abort("#{self} is not an array of length two.")
     end
   end
 end
@@ -411,9 +418,11 @@ class UserTranscripts
         transcripts.each do |transcript_id, transcript_info|
           other = transcript_info[:other]
           transcript_info[:coords].each do |exon_coords|
+            gene_id = transcript_info[:gene_id]
+            gene_id = gene_id.between if gene_id.class == Array
             output_line = [chromosome_name, 'Cufflinks', 'exon', \
                 exon_coords.first, exon_coords.last, '.', other[0], '.', \
-                "gene_id \"#{transcript_info[:gene_id]}\"; "\
+                "gene_id \"#{gene_id}\"; "\
                 "transcript_id \"#{transcript_id}\"; #{other[1]}"]
             output_file.puts(output_line.join("\t"))
           end
