@@ -896,7 +896,7 @@ transcripts.write_to_file($options[:output_path])
 puts '
 SUMMARY
 =======
-Transcripts that overlap multiple genes:
+Analysis of transcripts that overlap multiple genes:
 '
 
 phase_one_overlaps_stats = transcripts.stats[:phase_one_overlaps]
@@ -922,9 +922,13 @@ puts "  ------------------------
 
   #{transcripts.stats[:phase_one_intergenic][:intergenics]} intergenic regions " \
 "removed, including #{transcripts.stats[:phase_one_intergenic][:transcripts]} " \
-"associated intergenic transcripts.
+"associated intergenic transcripts.\n\n"
 
-Transcripts on adjacent genes that overlap:
+if $options[:minimal_split]
+  puts 'Minimal-split option specified. Overlapping transcripts on adjacent ' \
+      'genes have been ignored.'
+else
+  puts "Transcripts on adjacent genes that overlap:
   #{transcripts.stats[:phase_two][:intergenics_adj_genes] + \
   transcripts.stats[:phase_two][:intergenics_adj_inter]} intergenic regions " \
   "fixed.
@@ -934,3 +938,4 @@ Transcripts on adjacent genes that overlap:
     "overlaps with intergenic transcripts.
   #{transcripts.stats[:phase_two][:transcripts]} associated intergenic " \
   'transcripts removed.'
+end
