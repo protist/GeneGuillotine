@@ -50,12 +50,8 @@ TGGT1_chrIX	ApiDB	CDS	40	50	.	-	0	ID=cds_TGGT1_010-1;Name=cds;description=.;size
 TGGT1_chrIX	ApiDB	CDS	60	72	.	-	1	ID=cds_TGGT1_060-1;Name=cds;description=.;size=127;Parent=rna_TGGT1_060-1
 TGGT1_chrIX	ApiDB	CDS	80	95	.	-	0	ID=cds_TGGT1_080-1;Name=cds;description=.;size=62;Parent=rna_TGGT1_080-1
 TGGT1_chrIX	ApiDB	CDS	100	110	.	-	0	ID=cds_TGGT1_080-1;Name=cds;description=.;size=62;Parent=rna_TGGT1_080-1
-TGGT1_chrX	ApiDB	CDS	10	30	.	-	0	ID=cds_TGGT1_010-1;Name=cds;description=.;size=180;Parent=rna_TGGT1_010-1
-TGGT1_chrX	ApiDB	CDS	40	50	.	-	0	ID=cds_TGGT1_010-1;Name=cds;description=.;size=105;Parent=rna_TGGT1_010-1
-TGGT1_chrX	ApiDB	CDS	60	72	.	-	1	ID=cds_TGGT1_060-1;Name=cds;description=.;size=127;Parent=rna_TGGT1_060-1
-TGGT1_chrX	ApiDB	CDS	80	95	.	-	0	ID=cds_TGGT1_080-1;Name=cds;description=.;size=62;Parent=rna_TGGT1_080-1
-TGGT1_chrX	ApiDB	CDS	100	110	.	-	0	ID=cds_TGGT1_080-1;Name=cds;description=.;size=62;Parent=rna_TGGT1_080-1
-
-
-
-
+TGGT1_chrX	ApiDB	rRNA	10	30	.	-	0	ID=rna_TGGT1_010-1;Name=TGGT1_010-1;description=TGGT1_010-1.;size=180;Parent=TGGT1_010;Dbxref=ApiDB_ToxoDB:TGME49_010200,taxon:508771
+TGGT1_chrX	ApiDB	rRNA	40	50	.	-	0	ID=rna_TGGT1_010-1;Name=TGGT1_010-1;description=TGGT1_010-1.;size=105;Parent=TGGT1_010;Dbxref=ApiDB_ToxoDB:TGME49_010200,taxon:508771
+TGGT1_chrX	ApiDB	rRNA	60	72	.	-	1	ID=rna_TGGT1_060-1;Name=TGGT1_060-1;description=TGGT1_060-1.;size=127;Parent=TGGT1_060;Dbxref=ApiDB_ToxoDB:TGME49_010200,taxon:508771
+TGGT1_chrX	ApiDB	tRNA	80	95	.	-	0	ID=rna_TGGT1_080-1;Name=TGGT1_080-1;description=TGGT1_080-1.;size=62;Parent=TGGT1_080;Dbxref=ApiDB_ToxoDB:TGME49_010200,taxon:508771
+TGGT1_chrX	ApiDB	tRNA	100	110	.	-	0	ID=rna_TGGT1_080-1;Name=TGGT1_080-1;description=TGGT1_080-1.;size=62;Parent=TGGT1_080;Dbxref=ApiDB_ToxoDB:TGME49_010200,taxon:508771

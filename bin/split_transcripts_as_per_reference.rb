@@ -580,7 +580,7 @@ class ReferenceGFF
 end
 
 # Since the UTRs from eupathdb are not all defined, best to be consistent and
-#   define genes as being from first to last CDS (N.B. won't include rRNA).
+#   define genes as being from first to last CDS (except for tRNA and rRNA).
 # In field 9 -> Parent=rna_TGME49_203135-1 (N.B. all CDS are /-1$/).
 # N.B. if strand == "-", arranged in reverse numerical order, but let's not make
 #   either assumption here, just in case this file does not come from eupathdb.
@@ -588,16 +588,28 @@ end
 #   (for TGGT1 and TGME49) no entries have {$3 == "mRNA"} and contain "-2".
 #   Even if they did, this script only considers the terminal exons of all CDS
 #   sharing the same parent (without -1).
+# GFF header lines won't have splitline[2].
 puts "#{Time.new}: parsing reference gff file."
 refgff = ReferenceGFF.new
 File.open($options[:refgff_path]).each do |line|
   splitline = line.split("\t")
-  if splitline[2] == 'CDS' # Hence, ignore the header lines.
-                           # These are the parts of the line that we need.
-    refgff.write_gene(splitline[0], /Parent=rna_(.*)-1$/.match(splitline[8])[1], splitline[3].to_i, splitline[4].to_i)
+  skip = false
+  if splitline[2] == 'CDS'
+    matchdata = /Parent=rna_(TG[^_]{2,4}_\d*)-1(;|$)/.match(splitline[8])
+  elsif splitline[2] == 'tRNA' || splitline[2] == 'rRNA'
+    matchdata = /Parent=(TG[^_]{2,4}_\d*)(;|$)/.match(splitline[8])
+  else
+    skip = true
+  end
+  if !skip
+    if matchdata
+      refgff.write_gene(splitline[0], matchdata[1], splitline[3].to_i, splitline[4].to_i)
+    else
+      abort('ERROR: the following line does not contain a gene_id in the ' \
+          "expected format\n#{line}")
+    end
   end
 end
-# TODO: also import rRNA from reference GFF
 
 # Check that file is ordered.
 puts "#{Time.new}: checking order of reference gff file."
