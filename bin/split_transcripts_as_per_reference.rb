@@ -159,7 +159,8 @@ class UserTranscripts
   attr_reader(:transcripts_by_chromosome, :transcripts_to_split, :previously_split_transcripts, :stats)
 
   # For each chromosome, sort transcripts by start coordinates.
-  # TODO: sort coordinates within transcripts?
+  # TODO: sort coordinates within transcripts? Not necessary, since the output
+  #   from cuffmerge appears to always sort them already.
   def sort!
     @transcripts_by_chromosome.each do |chromosome, transcripts_for_this_chromosome|
       sorted_chromosome = Hash[transcripts_for_this_chromosome.sort_by { |_, value| value[:coords].first.first }]
@@ -898,13 +899,17 @@ if !$options[:minimal_split]
 
   transcripts.split!
 end
+
 ################################################################################
-### Make gene name unique if transcripts do not overlap
+### Unimplemented: Make gene name unique if transcripts do not overlap
 # DEXSeq trusts geneIDs. Hence, it combines two genes if they have the same
 #   geneID, regardless of where they are located.
-# TODO: intergenic transcripts need to have their gene name numbered: e.g. :a, :b
+# TODO: intergenic transcripts should have unique gene names: e.g. *:a, *:b.
 #   Not sure if I'll bother with this. Our premise is to trust the gene models.
 #   Allowing intergenic transcripts to exist at all is beyond our premise.
+# N.B. transcripts within a single gene that don't overlap will still have the
+#   same gene ID. I won't change this. Again, trust the gff.
+################################################################################
 
 transcripts.write_to_file($options[:output_path])
 
