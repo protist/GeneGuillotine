@@ -597,7 +597,7 @@ File.open($options[:refgff_path]).each do |line|
   splitline = line.split("\t")
   skip = false
   if splitline[2] == 'CDS'
-    matchdata = /Parent=rna_(TG[^_]{2,4}_\d*)-1(;|$)/.match(splitline[8])
+    matchdata = /Parent=rna_(TG[^_]{2,4}_\d*[A-Z]?)-1(;|$)/.match(splitline[8])
   elsif splitline[2] == 'tRNA' || splitline[2] == 'rRNA'
     matchdata = /Parent=(TG[^_]{2,4}_\d*)(;|$)/.match(splitline[8])
   else
