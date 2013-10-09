@@ -913,11 +913,12 @@ end
 
 transcripts.write_to_file($options[:output_path])
 
-puts '
+puts "#{Time.new}: processing complete and file written.
+
 SUMMARY
 =======
 Analysis of transcripts that overlap multiple genes:
-'
+"
 
 phase_one_overlaps_stats = transcripts.stats[:phase_one_overlaps]
 total_transcripts = 0
