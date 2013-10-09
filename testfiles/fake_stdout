@@ -1,25 +1,26 @@
-2013-09-24 16:42:03 +1000: parsing primary gtf file.
-2013-09-24 16:42:03 +1000: checking order of primary gtf file.
-2013-09-24 16:42:03 +1000: parsing reference gff file.
-2013-09-24 16:42:03 +1000: checking order of reference gff file.
-2013-09-24 16:42:03 +1000: checking reference gff file for overlapping genes.
-2013-09-24 16:42:03 +1000: fixing transcripts that overlap multiple reference genes.
-2013-09-24 16:42:03 +1000: fixing additional transcripts in these intergenic regions.
-2013-09-24 16:42:03 +1000: re-sorting transcripts.
-2013-09-24 16:42:03 +1000: fixing overlapping transcripts on adjacent genes.
+2013-10-09 16:42:39 +1100: parsing primary gtf file.
+2013-10-09 16:42:39 +1100: checking order of primary gtf file.
+2013-10-09 16:42:39 +1100: parsing reference gff file.
+2013-10-09 16:42:39 +1100: checking order of reference gff file.
+2013-10-09 16:42:39 +1100: checking reference gff file for overlapping genes.
+2013-10-09 16:42:39 +1100: fixing transcripts that overlap multiple reference genes.
+2013-10-09 16:42:39 +1100: fixing additional transcripts in these intergenic regions.
+2013-10-09 16:42:39 +1100: re-sorting transcripts.
+2013-10-09 16:42:39 +1100: fixing overlapping transcripts on adjacent genes.
 
 SUMMARY
 =======
 Analysis of transcripts that overlap multiple genes:
   1 transcript (1.4%) with no matching reference contig
-  18 transcripts (25.4%) overlap with 0 genes each
-  34 transcripts (47.9%) overlap with 1 gene each
-  13 transcripts (18.3%) overlap with 2 genes each
-  5 transcripts (7.0%) overlap with 3 genes each
+  18 transcripts (24.7%) overlap with 0 genes each
+  34 transcripts (46.6%) overlap with 1 gene each
+  13 transcripts (17.8%) overlap with 2 genes each
+  6 transcripts (8.2%) overlap with 3 genes each
+  1 transcript (1.4%) overlap with 4 genes each
   ------------------------
-  71 transcripts total
+  73 transcripts total
 
-  5 intergenic regions removed, including 4 associated intergenic transcripts.
+  8 intergenic regions removed, including 4 associated intergenic transcripts.
 
 Transcripts on adjacent genes that overlap:
   11 intergenic regions fixed.
