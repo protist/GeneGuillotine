@@ -342,14 +342,13 @@ class UserTranscripts
                 end
               end
             end
-
-            # Write last working transcript if non-zero.
-            #   gene_id will have been set from parent transcript.
-            if !(working_transcript[:coords] == [])
-              @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
-              self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
-            end
           end
+        end
+        # Write last working transcript if non-zero.
+        #   gene_id will have been set from parent transcript.
+        if !(working_transcript[:coords] == [])
+          @transcripts_by_chromosome[chromosome][new_transcript_id] = working_transcript
+          self.advance_transcript_id(chromosome, working_transcript[:base_transcript_id], new_transcript_id)
         end
       end
     end
