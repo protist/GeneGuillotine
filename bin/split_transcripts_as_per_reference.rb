@@ -133,6 +133,7 @@ class UserTranscripts
         intergenics_adj_inter:0, transcripts:0}}
     @transcripts_to_split = {}
     @previously_split_transcripts = {} # {:parent_transcript_id => :transcript_id:last#}
+    @previous_no_gene_on_ref = :No_genes_on_ref_contig
   end
 
   # Create a new chromosome and gene id if necessary, and replace start and stop
@@ -254,6 +255,11 @@ class UserTranscripts
     else # i.e. had used an existing transcript id.
       previously_first_unused_transcript_id
     end
+  end
+
+  # Find the next suffix for :No_genes_on_ref_contig
+  def next_no_gene_on_ref
+    @previous_no_gene_on_ref = @previous_no_gene_on_ref.multiple
   end
 
   # Make the splits. Call this after the loop is completed, to prevent problems
@@ -690,8 +696,8 @@ transcripts.chromosome_names.each do |chromosome|
           puts 'no genes on this reference contig'
         end
         transcripts.add_event(:phase_one_overlaps, :NA)
-        transcripts.write_gene_id(chromosome, transcript_id,
-                                  :'No_genes_on_ref_contig')
+        transcripts.write_gene_id(chromosome, transcript_id, \
+            transcripts.next_no_gene_on_ref)
       else # at the end of the chromosome
            # Could introduce this test earlier, and quickly mark all remaining
            #   transcripts identically, but there shouldn't be many, and it's
