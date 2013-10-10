@@ -110,7 +110,7 @@ class Array
   # Transcript is intergenic. [:gene1, :gene2]
   def between
     if self.length == 2
-      "[#{self.first}, #{self.last}]"
+      "[#{self.first},#{self.last}]"
     else
       abort("#{self} is not an array of length two.")
     end
