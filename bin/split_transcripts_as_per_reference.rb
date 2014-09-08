@@ -932,7 +932,7 @@ phase_one_overlaps_stats.values.each do |count|
   total_transcripts += count
 end
 
-if (na_count = phase_one_overlaps_stats[:NA])
+if na_count = phase_one_overlaps_stats[:NA]
   puts "  #{na_count} transcript#{'s' if na_count != 1} (" \
       "#{(na_count.to_f/total_transcripts*100).round(1)}%) "\
       'with no matching reference contig'
