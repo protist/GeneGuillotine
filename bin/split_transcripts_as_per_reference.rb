@@ -522,8 +522,7 @@ class ReferenceGFF
   #   three genes overlap). Also, sometimes a quick fix of splitting at the
   #   midpoint is inappropriate. It's better to notify the user that there are
   #   issues and let them manually fix it (e.g. by deleting one of the genes).
-  # N.B. an "overlap" of
-  # For toxodb files, there are only 3 and 14 overlaps for GT1 and ME49
+  # N.B. for toxodb files, there are only 3 and 14 overlaps for GT1 and ME49
   #   respectively anyway.
   def check_overlaps
     overlap_count = 0
