@@ -1,9 +1,13 @@
 GeneGuillotine
 ==============
-This script reads in a gtf file (e.g. from Cuffmerge), and splits it into
-non-overlapping genes, with one transcript per gene according to a second
-(reference) gff. This might be useful if a downstream program (e.g. DEXSeq)
-requires each gene to be separate and not overlapping with its neighbours.
+This script reads in a gtf file (e.g. from Cuffmerge), and prevents transcripts
+from overlapping multiple genes, according to a second (reference) gff. This
+might be useful if a downstream program (e.g. DEXSeq) requires each transcript
+to be separate and not overlapping with its neighbours.
+
+The position of the split is determined by the genes in the reference gff. The
+default is to constrain each transcript to the limits of the CDS. Transcripts
+that lie wholly within intergenic regions will be kept.
 
 Arguments and input files
 -------------------------

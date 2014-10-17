@@ -12,15 +12,14 @@
 # You should have received a copy of the GNU General Public License
 #   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-# This script reads in a gtf file, and splits it into non-overlapping genes,
-#   with one gene per gene according to a second (reference) gff. This might be
-#   useful if a downstream program (e.g. DEXSeq) requires each gene to be
+# This script reads in a gtf file, and prevents transcripts from overlapping
+#   multiple genes, according to a second (reference) gff. This might be useful
+#   if a downstream program (e.g. DEXSeq) requires each gene's transcripts to be
 #   separate and not overlapping with its neighbours.
 #
 # The position of the split is determined by the genes in the reference gff. The
 #   default is to constrain each transcript to the limits of the CDS.
-#
-# Transcripts that lie wholly within intergenic regions will be kept.
+#   Transcripts that lie wholly within intergenic regions will be kept.
 #
 # Output file:
 #   gtf with gene IDs from reference gff (N.B. DEXSeq does not show position of
