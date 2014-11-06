@@ -11,23 +11,24 @@ that lie wholly within intergenic regions will be kept.
 
 Arguments and input files
 -------------------------
-**Help** (-h, --help). Display help.
+**Help** (`-h`, `--help`). Display help.
 
-**Verbosity** (-v, --verbose [2]). Run verbosely. The default level of verbosity
+**Verbosity** (`-v`, `--verbose [2]`). Run verbosely. The default level of verbosity
 reports at a chromosomal level. Optionally, specify level 2 for gene-level
 reporting.
 
-**RNA-seq data** (-i, --input GTF_FILE). The gtf parser is designed for use with
+**RNA-seq data** (`-i`, `--input GTF_FILE`). The gtf parser is designed for use with
 Cuffmerge gtf files. Hence, the canonical usage is to use the Tuxedo pipeline
 (map reads with [Tophat](http://tophat.cbcb.umd.edu/), create gene models with
 [Cufflinks](http://cufflinks.cbcb.umd.edu/), and merge samples with
 [Cuffmerge](http://cufflinks.cbcb.umd.edu/)).
 
-**Reference gene models** (-g, --ref_gff GFF_FILE). The gff parser is designed
-for use with gff files from [eupathdb](http://eupathdb.org). It only parses
-features marked as "CDS", since UTR information is not available for all genes.
+**Reference gene models** (`-g`, `--ref_gff GFF_FILE`). The gff parser is designed
+for use with gff files from [EuPathDB](http://eupathdb.org). It only parses
+features marked as `CDS` (and `tRNA` and `rRNA`), since UTR information is not
+available for all genes.
 
-**Minimal split** (-m, --minimal_split). This optional flag tells the script to
+**Minimal split** (`-m`, `--minimal_split`). This optional flag tells the script to
 only split transcripts that overlap multiple genes (i.e. the first part of the
 script). This prevents the second part of the script from running, which would
 otherwise truncate transcripts that lie on adjacent genes, but overlap with each
@@ -35,7 +36,7 @@ other.
 
 Output
 ------
-**Output file** (-o, --output OUTPUT_FILE). Gene IDs from the reference gff file
+**Output file** (`-o`, `--output OUTPUT_FILE`). Gene IDs from the reference gff file
 are written to the transcripts, if they cover a single gene. In other cases, the
 nearest gene is recorded. e.g. for intergenic transcripts, "after_GENE_ID" or
 "before_GENE_ID"; and for transcripts that lie before the first gene or after
